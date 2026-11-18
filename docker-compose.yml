@@ -1,0 +1,16 @@
+services:
+  oracle:
+    image: gvenzl/oracle-free:23.26.4-slim-faststart
+    environment:
+      ORACLE_PASSWORD: ${ORACLE_PASSWORD:?defina no .env}
+      WALLET_OWNER_PASSWORD: ${WALLET_OWNER_PASSWORD:?defina no .env}
+      WALLET_APP_PASSWORD: ${WALLET_APP_PASSWORD:?defina no .env}
+      WALLET_AUDIT_PASSWORD: ${WALLET_AUDIT_PASSWORD:?defina no .env}
+    ports:
+      - "1521:1521"
+    volumes:
+      - ./db/init:/container-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      retries: 30
