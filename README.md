@@ -183,6 +183,17 @@ O teste de concorrência confere: saldo nunca negativo, nenhuma operação em do
 
 Para ver o teste falhar de verdade, remova temporariamente o `FOR UPDATE WAIT 5` do `PKG_WALLET`: o cenário 1 passa a aplicar 20 débitos em vez de 10 (ver [DECISIONS.md](DECISIONS.md)).
 
+## Integração contínua (CI)
+
+Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21):
+
+1. **Compilação estrita** (`./mvnw test-compile`): o `pom.xml` liga `-Xlint:all` e `failOnWarning`, então qualquer aviso do compilador quebra o build. Em Java, a checagem de tipos é o próprio compilador.
+2. **Testes unitários** (`./mvnw verify`): sem banco e sem Docker.
+
+O job `Build e testes` é **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir o mesmo localmente: `./mvnw -B verify`.
+
+Ainda não há linter nem formatador (equivalentes ao Biome/ESLint do Node, que em Java seriam Spotless ou Checkstyle); ver [DECISIONS.md](DECISIONS.md).
+
 ## Provas de privilégio mínimo
 
 Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELETE` ou `SELECT` direto nas tabelas, e qualquer acesso ao schema de auditoria, retornam `ORA-00942`. O teste `regras_pkg_wallet.sql` automatiza essa prova.

@@ -1,0 +1,42 @@
+name: CI
+
+# Roda em todo PR para develop e main, e depois de cada merge nelas.
+# O job "Build e testes" e exigido pela protecao de branch: sem ele verde, o merge e bloqueado.
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+# Um push novo na mesma branch cancela a execucao anterior que ainda esta rodando.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar o Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven # guarda ~/.m2 entre execucoes (o "node_modules" global do Maven)
+
+      # Em Java o "typecheck" e o compilador. O pom.xml liga -Xlint:all e failOnWarning:
+      # qualquer aviso do compilador quebra o build.
+      - name: Compilar (checagem de tipos)
+        run: ./mvnw -B -ntp test-compile
+
+      - name: Testes unitarios
+        run: ./mvnw -B -ntp verify
