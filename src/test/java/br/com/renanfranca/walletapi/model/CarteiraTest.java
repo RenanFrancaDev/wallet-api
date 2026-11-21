@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -18,7 +17,13 @@ class CarteiraTest {
     }
 
     @ParameterizedTest(name = "{0} -> {1}")
-    @CsvSource({ "0, 0.00", "100.5, 100.50", "7, 7.00", "10.25, 10.25", "9999999999999.99, 9999999999999.99" })
+    @CsvSource({
+        "0, 0.00",
+        "100.5, 100.50",
+        "7, 7.00",
+        "10.25, 10.25",
+        "9999999999999.99, 9999999999999.99"
+    })
     void normalizaOSaldoParaDuasCasas(String vindoDoBanco, String esperado) {
         assertThat(comSaldo(vindoDoBanco).saldo().toPlainString()).isEqualTo(esperado);
     }
