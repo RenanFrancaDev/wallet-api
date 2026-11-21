@@ -2,7 +2,7 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants) e projeto Spring Boot criado, com o Flyway aplicando as migrations no startup. Os endpoints, o Swagger, a API key e os testes em Java estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira, com tradução padronizada dos erros `ORA-20xxx` para HTTP. Registrar operação, extrato, Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
@@ -62,6 +62,12 @@ Pacote raiz `br.com.renanfranca.walletapi` (group `br.com.renanfranca`, artifact
 src/main/java/br/com/renanfranca/walletapi/
   WalletApiApplication.java        ponto de entrada
   config/FlywayConfig.java         executa as migrations no startup
+  controller/                      rotas HTTP (só traduz HTTP; sem regra de negócio)
+  service/                         casos de uso e controle da transação (@Transactional)
+  repository/                      acesso ao banco: escreve pelo PKG_WALLET, lê pelas views
+  model/                           objetos de domínio (records imutáveis)
+  dto/                             corpos de requisição e resposta
+  exception/                       catálogo de erros, payload padrão e tradução ORA-20xxx -> HTTP
 src/main/resources/
   application.properties           conexão (WALLET_APP), senhas do .env, Actuator
   db/migration/{audit,owner}/      migrations Flyway
@@ -105,6 +111,36 @@ curl http://localhost:8080/actuator/health    # {"status":"UP"}
 
 Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, inclusive por SQL direto) e toda mudança de saldo grava a trilha na mesma transação.
 
+## API
+
+| Método e rota | O que faz | Sucesso | Erros |
+|---|---|---|---|
+| `POST /wallets` | cria uma carteira com saldo `0.00`. Corpo opcional: `{"titular": "Maria"}` (até 120 caracteres) | `201` + header `Location` + carteira | `400` |
+| `GET /wallets/{id}` | consulta a carteira e o saldo | `200` + carteira | `404`, `400` (id não numérico) |
+
+Exemplo:
+
+```bash
+curl -X POST http://localhost:8080/wallets -H 'Content-Type: application/json' -d '{"titular":"Maria"}'
+# 201  {"id":21,"titular":"Maria","saldo":0.00,"criadaEm":"2026-11-21T11:51:33.635316Z"}
+
+curl http://localhost:8080/wallets/21
+curl http://localhost:8080/wallets/999999
+# 404  {"codigo":"CARTEIRA_NAO_ENCONTRADA","mensagem":"Carteira não encontrada.","timestamp":"...","path":"/wallets/999999","detalhes":[]}
+```
+
+**Formato padrão de erro** (toda a API, inclusive rota inexistente e método não permitido):
+
+| Campo | Conteúdo |
+|---|---|
+| `codigo` | identificador estável para o cliente tratar por código (ex.: `SALDO_INSUFICIENTE`) |
+| `mensagem` | texto legível |
+| `timestamp` | momento do erro |
+| `path` | caminho da requisição |
+| `detalhes` | lista com informações extras (campos inválidos, regra violada); vazia quando não há |
+
+A mensagem do Oracle (nomes de objeto, stack) nunca vai para o cliente. Erros inesperados saem como `500 ERRO_INTERNO`, com o detalhe só no log.
+
 ## `PKG_WALLET` e códigos de erro
 
 Toda escrita passa pelo package. As procedures **não fazem `COMMIT`**: quem chama controla a transação.
@@ -112,18 +148,26 @@ Toda escrita passa pelo package. As procedures **não fazem `COMMIT`**: quem cha
 - `CRIAR_CARTEIRA(titular, OUT id, OUT saldo, OUT criada_em)`
 - `REGISTRAR_OPERACAO(carteira, tipo, valor, chave, OUT lancamento_id, OUT saldo_apos, OUT criado_em, OUT repetida)`
 
-| Código | Significado | HTTP previsto |
-|---|---|---|
-| `-20001` | carteira não encontrada | 404 |
-| `-20002` | dados inválidos (tipo, valor, chave, titular) | 400 |
-| `-20003` | saldo insuficiente | 422 |
-| `-20004` | chave de idempotência reutilizada com payload diferente | 409 |
-| `-20005` | extrato imutável | 409 |
-| `-20006` | carteira ocupada (lock não obtido em 5 s) | 503 |
+| Código do banco | `codigo` na API | Significado | HTTP |
+|---|---|---|---|
+| `-20001` | `CARTEIRA_NAO_ENCONTRADA` | carteira não encontrada | 404 |
+| `-20002` | `DADOS_INVALIDOS` | dados inválidos (tipo, valor, chave, titular) | 400 |
+| `-20003` | `SALDO_INSUFICIENTE` | saldo insuficiente | 422 |
+| `-20004` | `CHAVE_IDEMPOTENCIA_CONFLITO` | chave de idempotência reutilizada com payload diferente | 409 |
+| `-20005` | `EXTRATO_IMUTAVEL` | extrato imutável | 409 |
+| `-20006` | `CARTEIRA_OCUPADA` | carteira ocupada (lock não obtido em 5 s) | 503 |
 
-## Como testar (camada de banco)
+**Por que cada status:** `400` a requisição é inválida em si; `404` o recurso não existe; `409` conflito com o estado atual; `422` a requisição está bem formada mas viola uma regra de negócio (saldo insuficiente); `503` falha transitória, o cliente pode tentar de novo. A tradução está em um único lugar: `exception/ErroNegocio` e `GlobalExceptionHandler`.
 
-Com o banco no ar e as migrations aplicadas (basta ter subido a aplicação uma vez):
+## Como testar
+
+**Testes unitários (Java)**, sem banco e sem Docker: tradução de erros, catálogo, serviço e camada web.
+
+```bash
+./mvnw test
+```
+
+**Camada de banco**, com o banco no ar e as migrations aplicadas (basta ter subido a aplicação uma vez):
 
 ```bash
 # Git Bash no Windows: prefixe com MSYS_NO_PATHCONV=1
@@ -145,4 +189,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-Os quatro endpoints, tradução dos erros `ORA-20xxx` para HTTP, API key, OpenAPI/Swagger, testes unitários e testes de integração com Testcontainers (incluindo concorrência).
+Registrar operação e extrato (com paginação e filtro por período), API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).

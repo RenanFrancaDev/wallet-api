@@ -127,6 +127,38 @@ Usei a versão padrão do Spring Initializr no momento (Spring Boot 4.2.0), com 
 
 **Sem banco em memória** (H2): o enunciado proíbe, e a aplicação só fala com o Oracle.
 
+## 16. Camadas e responsabilidades
+
+`controller` (HTTP), `service` (caso de uso e transação), `repository` (banco), `model`, `dto` e `exception`. O controller só traduz HTTP para chamadas de serviço e de volta, sem regra de negócio. A regra de negócio mora no banco (item 1); o serviço existe para controlar a transação e orquestrar.
+
+**Por quê não colocar tudo no controller:** a transação (`@Transactional`) precisa envolver a chamada ao package e a leitura seguinte, e isso é responsabilidade de um serviço. Também deixa o controller testável sem banco.
+
+## 17. Traduzir erros em um único lugar
+
+**Decisão:** o enum `ErroNegocio` liga o código do Oracle (`-20001` a `-20006`) ao `codigo` da API, ao status HTTP e à mensagem. O `GlobalExceptionHandler` usa esse catálogo tanto para erros que nascem no banco quanto para os detectados pela aplicação (por exemplo, `GET` de carteira inexistente), então a resposta é idêntica nos dois casos.
+
+**Status HTTP:** `400` requisição inválida em si; `404` recurso inexistente; `409` conflito com o estado atual (chave de idempotência já usada, extrato imutável); `422` requisição bem formada que viola regra de negócio (saldo insuficiente); `503` falha transitória (carteira ocupada), que o cliente pode repetir.
+
+**A mensagem do Oracle não vai para o cliente.** Nomes de objeto e stack vazam estrutura interna. Os erros de negócio saem com a mensagem do catálogo; o `-20002` acrescenta em `detalhes` o motivo exato, porque essa mensagem é escrita por nós no PL/SQL e é segura. Qualquer outro erro vira `500 ERRO_INTERNO` genérico, com o detalhe só no log.
+
+**Formato único:** o payload de erro é o mesmo para erros de negócio, validação, JSON malformado, rota inexistente e método não permitido (`codigo`, `mensagem`, `timestamp`, `path`, `detalhes`).
+
+## 18. Validação em duas camadas
+
+O Bean Validation (`@Size` no titular) rejeita o corpo antes de ir ao banco e evita uma viagem. A regra definitiva continua no `PKG_WALLET`. As duas devolvem o mesmo `codigo` (`DADOS_INVALIDOS`), então o cliente não precisa saber qual camada barrou.
+
+## 19. Transação na aplicação, não no banco
+
+O `CarteiraService` é `@Transactional`: abre a transação ao entrar, confirma ao sair e desfaz se lançar exceção. O `PKG_WALLET` não faz `COMMIT` (item 6). O serviço também lê a carteira recém-criada na mesma transação, o que enxerga uma linha ainda não confirmada.
+
+## 20. Saldo sempre com 2 casas decimais
+
+O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` normaliza o saldo para 2 casas no construtor, e falha alto (`UNNECESSARY`) se o banco um dia devolver mais, porque isso seria bug. O contrato da API é "saldo em reais com 2 casas".
+
+## 21. Criar carteira devolve `201` com `Location`
+
+`POST /wallets` responde `201 Created` com o header `Location: /wallets/{id}` e o recurso no corpo, o padrão REST. O corpo da requisição é opcional, já que o titular é opcional pelo enunciado.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
