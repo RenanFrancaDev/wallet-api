@@ -159,6 +159,18 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 `POST /wallets` responde `201 Created` com o header `Location: /wallets/{id}` e o recurso no corpo, o padrão REST. O corpo da requisição é opcional, já que o titular é opcional pelo enunciado.
 
+## 22. CI mínimo com merge bloqueado
+
+**Decisão:** um workflow do GitHub Actions compila (com avisos do compilador tratados como erro) e roda os testes unitários em todo PR para `develop` e `main`. A proteção de branch exige o job `Build e testes`, então o merge só é possível com ele verde.
+
+**"Typecheck" em Java:** o compilador já recusa tipo errado; o que se escolhe é o rigor. Ligar `-Xlint:all` com `failOnWarning` tornou o gate mais forte e já encontrou um problema real no primeiro uso (uma exceção serializável sem `serialVersionUID`), corrigido na mesma branch.
+
+**Validado em checkout limpo, sem o `.env`**, para ter certeza de que o CI não depende de arquivos locais.
+
+**Fora, de propósito:** linter e formatador. O Biome é do ecossistema JavaScript; em Java os equivalentes são o Spotless (formatador) e o Checkstyle (regras de estilo). Cada um é um plugin novo e reformataria código existente, gerando um PR grande. Fica para depois do núcleo.
+
+**Com mais tempo:** os testes de integração com Testcontainers entram no mesmo workflow (o runner já tem Docker), formatador e linter, e cobertura com limite mínimo.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
