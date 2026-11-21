@@ -95,6 +95,38 @@ Registro do que escolhi, por quê, o que descartei e o que faria com mais tempo.
 
 A aplicação lê por `V_CARTEIRA` e `V_EXTRATO`, não pelas tabelas. Limita as colunas expostas e permite mudar as tabelas sem quebrar a leitura. Escrever continua só pelo package.
 
+## 12. Flyway executado pela aplicação, em dois conjuntos
+
+**Decisão:** a classe `FlywayConfig` define dois beans `Flyway`, um por conjunto (`audit` e `owner`), cada um com o seu usuário, e o segundo depende do primeiro (`@DependsOn`). A autoconfiguração do Flyway do Spring fica desligada (`spring.flyway.enabled=false`).
+
+**Por quê:** a autoconfiguração aceita um único usuário e um único conjunto de migrations. Aqui os objetos pertencem a schemas diferentes, e a ordem é obrigatória (a trigger do OWNER chama a procedure do schema de auditoria). Tudo roda no startup, então um clone novo chega ao mesmo banco sem passo manual.
+
+**Separação de credenciais:** as credenciais do `WALLET_OWNER` e do `WALLET_AUDIT` são usadas só pelo Flyway no startup. As requisições usam o `WALLET_APP`, que não tem DML em tabelas.
+
+**Contorno de um bug de Windows:** quando o Flyway monta a conexão sozinho (url, usuário e senha), o módulo Oracle procura um arquivo de log dentro do jar do driver e converte o caminho `nested:C:\...` com `Paths.get()`, o que lança `InvalidPathException` no Windows ao rodar o jar executável do Spring Boot. Entrego ao Flyway um `DriverManagerDataSource` pronto, e esse trecho deixa de ser executado. Não usei pool porque a migration roda uma única vez no startup. O erro vem da conversão de caminho do Windows; não testei em Linux nem macOS, mas o contorno não depende do sistema operacional.
+
+**Alternativa descartada:** rodar o Flyway por fora (CLI ou plugin Maven) em um passo separado. Funcionaria, mas exigiria um passo manual a mais no README e separaria o ciclo de vida do banco do da aplicação.
+
+## 13. Senhas no `.env`, lidas pela aplicação
+
+`spring.config.import=optional:file:.env[.properties]` faz a aplicação ler as senhas do mesmo `.env` do `docker compose`, sem duplicar configuração. O arquivo é opcional: em container ou CI, as variáveis de ambiente fazem o mesmo papel. Nada é commitado.
+
+## 14. Versões e o que o Initializr gerou
+
+Usei a versão padrão do Spring Initializr no momento (Spring Boot 4.2.0), com Java 21 e Maven. O Initializr gerou três classes de teste de exemplo que sobem um Oracle com a tag `latest`; **não as mantive**, porque o enunciado proíbe `latest` e porque o nosso modelo exige os três usuários, que a imagem pura não cria. Os testes de integração entram na etapa própria, com a tag fixa.
+
+## 15. Pacote Java e dependências
+
+**Pacote** `br.com.renanfranca.walletapi` (convenção de domínio reverso), com subpacotes por responsabilidade (`config` agora; `controller`, `service` e `exception` nas próximas etapas).
+
+**JDBC em vez de JPA/Hibernate:** toda escrita passa pelo `PKG_WALLET` e a leitura são views simples. JPA seria uma camada que esconde o SQL num serviço em que o banco é quem decide. O enunciado permite JDBC.
+
+**Sem Lombok:** o código fica explícito e eu consigo explicar linha a linha; os DTOs podem ser `record` do próprio Java.
+
+**Sem Spring Security:** a autenticação é uma API key simples (um filtro) e o enunciado exclui JWT/OAuth.
+
+**Sem banco em memória** (H2): o enunciado proíbe, e a aplicação só fala com o Oracle.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

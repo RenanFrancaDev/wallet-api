@@ -4,3 +4,5 @@ target/
 .vscode/
 *.log
 notas-entrevista/
+HELP.md
+.mvn/wrapper/maven-wrapper.jar

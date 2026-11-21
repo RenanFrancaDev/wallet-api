@@ -2,7 +2,9 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants). A API Spring, o Swagger, a API key e os testes em Java estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants) e projeto Spring Boot criado, com o Flyway aplicando as migrations no startup. Os endpoints, o Swagger, a API key e os testes em Java estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+
+**Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
 As decisões técnicas e os motivos estão em [DECISIONS.md](DECISIONS.md).
 
@@ -10,7 +12,7 @@ As decisões técnicas e os motivos estão em [DECISIONS.md](DECISIONS.md).
 
 - Docker (Docker Desktop com WSL2 no Windows, ou Docker Engine no Linux/macOS) com **pelo menos 4 GB de memória** disponíveis. Com menos de 2 GB o Oracle não inicializa.
 - Git Bash (Windows) ou qualquer shell POSIX.
-- Java 17+ e Maven (necessários só quando a API Spring entrar; o wrapper `mvnw` virá com o projeto).
+- Java 17+ (o projeto foi desenvolvido com Java 21). O Maven não precisa estar instalado: o wrapper `./mvnw` baixa a versão certa.
 
 ## Subir o banco
 
@@ -50,19 +52,50 @@ Ficam em `src/main/resources/db/migration/`, em **dois conjuntos**, cada um exec
 | `owner/V5__views_de_leitura.sql` | `V_CARTEIRA` e `V_EXTRATO` |
 | `owner/V6__grants_wallet_app.sql` | privilégios mínimos do `WALLET_APP` |
 
-> **Provisório:** enquanto o Flyway não estiver ligado ao Spring, aplique os arquivos à mão (banco recém-criado), primeiro o conjunto `audit`, depois o `owner`, em ordem de versão:
->
-> ```bash
-> # Git Bash no Windows: prefixe com MSYS_NO_PATHCONV=1
-> for f in src/main/resources/db/migration/audit/V*.sql; do
->   { printf 'SET DEFINE OFF\nSET SQLBLANKLINES ON\nWHENEVER SQLERROR EXIT FAILURE\n'; cat "$f"; } |
->     docker compose exec -T oracle sh -c 'sqlplus -s WALLET_AUDIT/"$WALLET_AUDIT_PASSWORD"@//localhost:1521/FREEPDB1'
-> done
-> for f in src/main/resources/db/migration/owner/V*.sql; do
->   { printf 'SET DEFINE OFF\nSET SQLBLANKLINES ON\nWHENEVER SQLERROR EXIT FAILURE\n'; cat "$f"; } |
->     docker compose exec -T oracle sh -c 'sqlplus -s WALLET_OWNER/"$WALLET_OWNER_PASSWORD"@//localhost:1521/FREEPDB1'
-> done
-> ```
+As migrations são aplicadas **automaticamente quando a aplicação sobe**, pela classe [`FlywayConfig`](src/main/java/br/com/renanfranca/walletapi/config/FlywayConfig.java): primeiro o conjunto `audit` (conectada como `WALLET_AUDIT`), depois o `owner` (como `WALLET_OWNER`). Cada conjunto tem a sua tabela `flyway_schema_history` no próprio schema. A aplicação, ao servir requisições, usa só o `WALLET_APP`.
+
+## Estrutura do projeto e dependências
+
+Pacote raiz `br.com.renanfranca.walletapi` (group `br.com.renanfranca`, artifact `wallet-api`), Java 21, Maven, empacotado como jar com Tomcat embutido.
+
+```
+src/main/java/br/com/renanfranca/walletapi/
+  WalletApiApplication.java        ponto de entrada
+  config/FlywayConfig.java         executa as migrations no startup
+src/main/resources/
+  application.properties           conexão (WALLET_APP), senhas do .env, Actuator
+  db/migration/{audit,owner}/      migrations Flyway
+db/                                scripts de init do container e testes de banco
+```
+
+| Dependência | Para que | Por que |
+|---|---|---|
+| Spring Web | endpoints REST | os 4 endpoints do enunciado |
+| JDBC API | `JdbcTemplate`/`SimpleJdbcCall` | toda escrita passa pelo package PL/SQL; leitura por views |
+| Validation | validação do corpo das requisições | a regra definitiva continua no banco |
+| Flyway + módulo Oracle | migrations versionadas | exigido; o suporte a Oracle é um módulo separado desde o Flyway 10 |
+| Oracle Driver (ojdbc17) | conexão com o Oracle | escopo runtime |
+| Actuator | `health` e `info` | observabilidade mínima |
+| Testcontainers (oracle-free) | Oracle real nos testes | testes de integração, incluindo concorrência |
+
+**Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
+
+## Rodar a aplicação
+
+Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas dele):
+
+```bash
+./mvnw spring-boot:run
+# ou, gerando o jar:
+./mvnw -DskipTests package
+java -jar target/wallet-api-0.0.1-SNAPSHOT.jar
+```
+
+Execute a partir da **raiz do projeto**, para a aplicação encontrar o `.env` (em container ou CI, as mesmas variáveis podem vir do ambiente). Na primeira subida o Flyway cria tudo; nas seguintes ele só valida (`Schema ... is up to date`).
+
+```bash
+curl http://localhost:8080/actuator/health    # {"status":"UP"}
+```
 
 ## Modelo de dados
 
@@ -90,7 +123,7 @@ Toda escrita passa pelo package. As procedures **não fazem `COMMIT`**: quem cha
 
 ## Como testar (camada de banco)
 
-Com o banco no ar e as migrations aplicadas:
+Com o banco no ar e as migrations aplicadas (basta ter subido a aplicação uma vez):
 
 ```bash
 # Git Bash no Windows: prefixe com MSYS_NO_PATHCONV=1
@@ -112,4 +145,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-Projeto Spring com Flyway executando os dois conjuntos de migrations, os quatro endpoints, tradução dos erros `ORA-20xxx`, API key, OpenAPI/Swagger, testes unitários e de integração com Testcontainers.
+Os quatro endpoints, tradução dos erros `ORA-20xxx` para HTTP, API key, OpenAPI/Swagger, testes unitários e testes de integração com Testcontainers (incluindo concorrência).
