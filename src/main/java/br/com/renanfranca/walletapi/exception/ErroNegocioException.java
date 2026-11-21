@@ -7,6 +7,9 @@ package br.com.renanfranca.walletapi.exception;
  */
 public class ErroNegocioException extends RuntimeException {
 
+    /** Toda excecao Java e serializavel; declarar a versao evita o aviso do compilador (-Xlint:serial). */
+    private static final long serialVersionUID = 1L;
+
     private final ErroNegocio erro;
 
     public ErroNegocioException(ErroNegocio erro) {
