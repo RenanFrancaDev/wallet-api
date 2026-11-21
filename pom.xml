@@ -120,6 +120,34 @@
 					</compilerArgs>
 				</configuration>
 			</plugin>
+			<!--
+			  Formatacao automatica (o "Prettier" do Java): google-java-format, estilo AOSP (indentacao de 4 espacos,
+			  linha de ate 100 colunas, imports ordenados e sem imports sem uso).
+			  spotless:check (no verify e no CI) falha se algum arquivo nao estiver formatado.
+			  spotless:apply corrige tudo de uma vez.
+			-->
+			<plugin>
+				<groupId>com.diffplug.spotless</groupId>
+				<artifactId>spotless-maven-plugin</artifactId>
+				<version>3.12.0</version>
+				<configuration>
+					<!-- Sempre LF, em qualquer sistema operacional (no Windows o padrao seria CRLF e geraria ruido no Git). -->
+					<lineEndings>UNIX</lineEndings>
+					<java>
+						<googleJavaFormat>
+							<style>AOSP</style>
+						</googleJavaFormat>
+						<removeUnusedImports/>
+					</java>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 
