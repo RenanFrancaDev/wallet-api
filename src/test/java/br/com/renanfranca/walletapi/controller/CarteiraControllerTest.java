@@ -9,10 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import br.com.renanfranca.walletapi.exception.ErroNegocio;
+import br.com.renanfranca.walletapi.exception.ErroNegocioException;
+import br.com.renanfranca.walletapi.model.Carteira;
+import br.com.renanfranca.walletapi.service.CarteiraService;
 import java.math.BigDecimal;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
-
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -21,26 +24,23 @@ import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import br.com.renanfranca.walletapi.exception.ErroNegocio;
-import br.com.renanfranca.walletapi.exception.ErroNegocioException;
-import br.com.renanfranca.walletapi.model.Carteira;
-import br.com.renanfranca.walletapi.service.CarteiraService;
-
 /**
- * Camada web: sobe so o Spring MVC (sem banco), com o servico simulado, e dispara requisicoes HTTP de mentira.
- * Analogia Node: supertest em cima do app Express, com o servico mockado.
+ * Camada web: sobe so o Spring MVC (sem banco), com o servico simulado, e dispara requisicoes HTTP
+ * de mentira. Analogia Node: supertest em cima do app Express, com o servico mockado.
  */
 @WebMvcTest(CarteiraController.class)
 class CarteiraControllerTest {
 
-    @Autowired
-    private MockMvc mvc;
+    @Autowired private MockMvc mvc;
 
-    @MockitoBean
-    private CarteiraService service;
+    @MockitoBean private CarteiraService service;
 
     private static Carteira carteira(long id, String titular) {
-        return new Carteira(id, titular, new BigDecimal("0.00"), OffsetDateTime.parse("2026-11-21T10:00:00-03:00"));
+        return new Carteira(
+                id,
+                titular,
+                new BigDecimal("0.00"),
+                OffsetDateTime.parse("2026-11-21T10:00:00-03:00"));
     }
 
     @Test
@@ -58,7 +58,10 @@ class CarteiraControllerTest {
     void postComTitularRepassaOTitularAoServico() throws Exception {
         when(service.criar("Maria")).thenReturn(carteira(2, "Maria"));
 
-        mvc.perform(post("/wallets").contentType(MediaType.APPLICATION_JSON).content("{\"titular\":\"Maria\"}"))
+        mvc.perform(
+                        post("/wallets")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"titular\":\"Maria\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.titular").value("Maria"));
 
@@ -69,13 +72,17 @@ class CarteiraControllerTest {
     void postComTitularLongoDemaisDevolve400ComOCampoNosDetalhes() throws Exception {
         String longo = "x".repeat(121);
 
-        mvc.perform(post("/wallets").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"titular\":\"" + longo + "\"}"))
+        mvc.perform(
+                        post("/wallets")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"titular\":\"" + longo + "\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.codigo").value("DADOS_INVALIDOS"))
                 .andExpect(jsonPath("$.path").value("/wallets"))
                 .andExpect(jsonPath("$.timestamp").exists())
-                .andExpect(jsonPath("$.detalhes[0]").value(org.hamcrest.Matchers.startsWith("titular:")));
+                .andExpect(
+                        jsonPath("$.detalhes[0]")
+                                .value(org.hamcrest.Matchers.startsWith("titular:")));
     }
 
     @Test
@@ -97,7 +104,8 @@ class CarteiraControllerTest {
 
     @Test
     void getDeCarteiraInexistenteDevolve404() throws Exception {
-        when(service.buscar(99L)).thenThrow(new ErroNegocioException(ErroNegocio.CARTEIRA_NAO_ENCONTRADA));
+        when(service.buscar(99L))
+                .thenThrow(new ErroNegocioException(ErroNegocio.CARTEIRA_NAO_ENCONTRADA));
 
         mvc.perform(get("/wallets/99"))
                 .andExpect(status().isNotFound())
@@ -115,9 +123,11 @@ class CarteiraControllerTest {
 
     @Test
     void erroDoBancoLancadoPeloServicoETraduzidoNaCamadaWeb() throws Exception {
-        // Prova a ligacao completa: o servico lanca o que o driver lanca, a API responde 422 padronizado.
+        // Prova a ligacao completa: o servico lanca o que o driver lanca, a API responde 422
+        // padronizado.
         SQLException sql = new SQLException("ORA-20003: Saldo insuficiente.", "72000", 20003);
-        when(service.buscar(any(Long.class))).thenThrow(new UncategorizedSQLException("task", "sql", sql));
+        when(service.buscar(any(Long.class)))
+                .thenThrow(new UncategorizedSQLException("task", "sql", sql));
 
         mvc.perform(get("/wallets/1"))
                 .andExpect(status().isUnprocessableContent())
@@ -138,6 +148,10 @@ class CarteiraControllerTest {
         mvc.perform(get("/wallets/1"))
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.codigo").value("ERRO_INTERNO"))
-                .andExpect(jsonPath("$.mensagem").value(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("segredo"))));
+                .andExpect(
+                        jsonPath("$.mensagem")
+                                .value(
+                                        org.hamcrest.Matchers.not(
+                                                org.hamcrest.Matchers.containsString("segredo"))));
     }
 }

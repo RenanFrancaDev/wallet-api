@@ -7,21 +7,19 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.math.BigDecimal;
-import java.time.OffsetDateTime;
-import java.util.Optional;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import br.com.renanfranca.walletapi.exception.ErroNegocio;
 import br.com.renanfranca.walletapi.exception.ErroNegocioException;
 import br.com.renanfranca.walletapi.model.Carteira;
 import br.com.renanfranca.walletapi.repository.CarteiraRepository;
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.Optional;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 /**
- * Servico com o repositorio simulado (Mockito, o jest.fn() do Java). Sem Spring: o @Transactional nao age aqui,
- * so a logica do servico e testada.
+ * Servico com o repositorio simulado (Mockito, o jest.fn() do Java). Sem Spring: o @Transactional
+ * nao age aqui, so a logica do servico e testada.
  */
 class CarteiraServiceTest {
 
