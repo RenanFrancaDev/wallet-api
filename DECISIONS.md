@@ -171,6 +171,16 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Com mais tempo:** os testes de integração com Testcontainers entram no mesmo workflow (o runner já tem Docker), formatador e linter, e cobertura com limite mínimo.
 
+## 23. Formatação automática com google-java-format (Spotless)
+
+**Decisão:** Spotless com google-java-format em estilo AOSP, exigido no `verify` e, portanto, no CI. Detalhes e motivos em [PADROES.md](PADROES.md).
+
+**Por quê:** é o formatador mais usado em Java e não é configurável, o que elimina discussão de estilo. Escolhi o estilo AOSP (4 espaços) em vez do padrão Google (2 espaços) porque o código já usava 4 e isso reduziu o diff da adoção.
+
+**Problema real na adoção:** no Windows, o Spotless convertia todos os arquivos para CRLF e o diff passava de mil linhas de puro ruído. Fixei LF no plugin (`lineEndings=UNIX`) e no `.gitattributes`. A reformatação ficou em um commit `style:` separado do commit que liga o plugin.
+
+**Limite:** não suporta tabulação.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
