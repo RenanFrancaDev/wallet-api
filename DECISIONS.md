@@ -181,6 +181,20 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limite:** não suporta tabulação.
 
+## 24. Lint com Checkstyle, conjunto enxuto e sem regras de formato
+
+**Decisão:** Checkstyle com um arquivo de regras próprio (`config/checkstyle/checkstyle.xml`), exigido no `verify` e no CI. Detalhes e motivos em [PADROES.md](PADROES.md).
+
+**Por que Checkstyle:** é o linter de estilo mais usado em Java. Não existe uma ferramenta única como o Biome (formatador e linter juntos); o comum é combinar um formatador (Spotless) com um linter (Checkstyle), cada um no seu papel.
+
+**Por que um conjunto enxuto e não o preset do Google:** o preset exige indentação de 2 espaços e brigaria com o estilo AOSP já adotado; além disso, um preset grande gera centenas de avisos de Javadoc e acaba ignorado. Escolhi regras uma a uma, com o motivo registrado no próprio arquivo, e deixei **fora** tudo que é formato, para não haver duas ferramentas decidindo a mesma coisa.
+
+**Falha o build, sem "aviso":** qualquer violação quebra o CI, porque aviso que ninguém lê vira dívida.
+
+**Equivalente do `noConsole` do Biome:** proibido `System.out`, `System.err` e `printStackTrace`; o logger tem nível, formato e destino.
+
+**Com mais tempo:** SpotBugs ou Error Prone para análise de bugs mais profunda, e Javadoc obrigatório só na API pública.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

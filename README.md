@@ -188,8 +188,9 @@ Para ver o teste falhar de verdade, remova temporariamente o `FOR UPDATE WAIT 5`
 Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21):
 
 1. **Formatação** (`./mvnw spotless:check`): Spotless com google-java-format. Para corrigir: `./mvnw spotless:apply`.
-2. **Compilação estrita** (`./mvnw test-compile`): o `pom.xml` liga `-Xlint:all` e `failOnWarning`, então qualquer aviso do compilador quebra o build. Em Java, a checagem de tipos é o próprio compilador.
-3. **Testes unitários** (`./mvnw verify`): sem banco e sem Docker.
+2. **Lint** (`./mvnw checkstyle:check`): Checkstyle com um conjunto enxuto de regras (imports, nomes, bugs comuns, sem `System.out`).
+3. **Compilação estrita** (`./mvnw test-compile`): o `pom.xml` liga `-Xlint:all` e `failOnWarning`, então qualquer aviso do compilador quebra o build. Em Java, a checagem de tipos é o próprio compilador.
+4. **Testes unitários** (`./mvnw verify`): sem banco e sem Docker.
 
 O job `Build e testes` é **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir o mesmo localmente: `./mvnw -B verify`.
 

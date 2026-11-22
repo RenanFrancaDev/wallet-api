@@ -148,6 +148,39 @@
 					</execution>
 				</executions>
 			</plugin>
+			<!--
+			  Lint de estilo (o "biome lint"/ESLint do Java): Checkstyle com um conjunto enxuto de regras em
+			  config/checkstyle/checkstyle.xml. Formato (espacos, chaves, imports) fica com o Spotless.
+			  checkstyle:check roda no verify e no CI e falha com qualquer violacao.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-checkstyle-plugin</artifactId>
+				<version>3.6.0</version>
+				<configuration>
+					<configLocation>config/checkstyle/checkstyle.xml</configLocation>
+					<inputEncoding>UTF-8</inputEncoding>
+					<consoleOutput>true</consoleOutput>
+					<failsOnError>true</failsOnError>
+					<violationSeverity>warning</violationSeverity>
+					<includeTestSourceDirectory>true</includeTestSourceDirectory>
+				</configuration>
+				<dependencies>
+					<!-- Versao do Checkstyle fixada aqui (a do plugin e mais antiga e nao entende a sintaxe do Java 21). -->
+					<dependency>
+						<groupId>com.puppycrawl.tools</groupId>
+						<artifactId>checkstyle</artifactId>
+						<version>14.4.0</version>
+					</dependency>
+				</dependencies>
+				<executions>
+					<execution>
+						<goals>
+							<goal>check</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
 		</plugins>
 	</build>
 

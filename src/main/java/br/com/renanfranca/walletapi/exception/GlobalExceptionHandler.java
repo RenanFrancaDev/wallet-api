@@ -33,7 +33,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**
      * Primeira linha da mensagem de um erro de negocio do banco: "ORA-20002: Valor deve ser maior
@@ -58,7 +58,7 @@ public class GlobalExceptionHandler {
                 return resposta(erro.get(), detalhesDoBanco(erro.get(), sql), request);
             }
         }
-        log.error("Erro de acesso a dados em {}", request.getRequestURI(), ex);
+        LOGGER.error("Erro de acesso a dados em {}", request.getRequestURI(), ex);
         return erroInterno(request);
     }
 
@@ -106,7 +106,7 @@ public class GlobalExceptionHandler {
             return ResponseEntity.status(status)
                     .body(corpo(codigo, mensagemParaStatus(status), request, List.of()));
         }
-        log.error("Erro inesperado em {}", request.getRequestURI(), ex);
+        LOGGER.error("Erro inesperado em {}", request.getRequestURI(), ex);
         return erroInterno(request);
     }
 
