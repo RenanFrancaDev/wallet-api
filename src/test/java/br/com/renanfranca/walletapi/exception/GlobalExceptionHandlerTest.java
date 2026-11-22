@@ -76,7 +76,8 @@ class GlobalExceptionHandlerTest {
         DataAccessException erro =
                 erroDoBanco(
                         20002,
-                        "ORA-20002: Valor deve ser maior que zero.\nORA-06512: at \"WALLET_OWNER.PKG_WALLET\", line 70");
+                        "ORA-20002: Valor deve ser maior que zero.\n"
+                                + "ORA-06512: at \"WALLET_OWNER.PKG_WALLET\", line 70");
 
         ErroResponse corpo = handler.banco(erro, request).getBody();
 
@@ -90,7 +91,8 @@ class GlobalExceptionHandlerTest {
         DataAccessException erro =
                 erroDoBanco(
                         20005,
-                        "ORA-20005: Lancamento e imutavel.\nORA-06512: at \"WALLET_OWNER.TRG_LANCAMENTO_IMUTAVEL\", line 2\n"
+                        "ORA-20005: Lancamento e imutavel.\n"
+                                + "ORA-06512: at \"WALLET_OWNER.TRG_LANCAMENTO_IMUTAVEL\", line 2\n"
                                 + "ORA-04088: error during execution of trigger");
 
         assertThat(handler.banco(erro, request).getStatusCode().value()).isEqualTo(409);
