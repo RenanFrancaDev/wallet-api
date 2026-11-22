@@ -8,12 +8,14 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
 /**
  * Exige o header {@code X-API-Key} em todas as rotas, exceto a de saúde ({@code /actuator/health}),
- * que o orquestrador e o monitoramento precisam chamar sem credencial.
+ * que o orquestrador e o monitoramento precisam chamar sem credencial, e a documentação da API
+ * (OpenAPI e Swagger UI).
  *
  * <p>Analogia Node: é um middleware do Express ({@code app.use((req, res, next) => ...)}) que roda
  * ANTES dos controllers.
@@ -33,7 +35,14 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 public class ApiKeyFilter extends OncePerRequestFilter {
 
     static final String HEADER = "X-API-Key";
-    private static final String CAMINHO_PUBLICO = "/actuator/health";
+
+    /**
+     * Rotas que NÃO exigem chave, e só elas: a saúde (orquestrador e monitoramento) e a
+     * documentação da API (o contrato não expõe dado nenhum; para testar as rotas pelo Swagger UI,
+     * o botão "Authorize" recebe a chave).
+     */
+    private static final List<String> CAMINHOS_PUBLICOS =
+            List.of("/actuator/health", "/v3/api-docs", "/swagger-ui", "/swagger-ui.html");
 
     private final byte[] hashDaChaveEsperada;
     private final HandlerExceptionResolver resolvedorDeErros;
@@ -46,7 +55,10 @@ public class ApiKeyFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String caminho = request.getRequestURI();
-        return caminho.equals(CAMINHO_PUBLICO) || caminho.startsWith(CAMINHO_PUBLICO + "/");
+        // Caminho exato ou "abaixo" dele (com a barra): /swagger-ui/index.html passa, /swagger-uix
+        // não.
+        return CAMINHOS_PUBLICOS.stream()
+                .anyMatch(publico -> caminho.equals(publico) || caminho.startsWith(publico + "/"));
     }
 
     @Override
