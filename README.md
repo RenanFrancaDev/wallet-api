@@ -86,7 +86,25 @@ db/                                scripts de init do container e testes de banc
 
 **Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
 
+## Comandos do dia a dia (scripts)
+
+Em [`scripts/`](scripts/) ficam atalhos, o equivalente aos `npm run dev`, `npm test` etc. Cada um existe em **Bash** (`.sh`: Git Bash, Linux e Mac) e em **PowerShell** (`.ps1`), com o mesmo comportamento:
+
+| Para quê | Bash | PowerShell |
+|---|---|---|
+| **Subir tudo para desenvolver**: confere o `.env`, liga o banco, espera ele ficar `healthy` e roda a aplicação | `./scripts/start.sh` | `.\scripts\start.ps1` |
+| **Encerrar** a aplicação (só se a porta 8080 for mesmo dela); com a opção, desliga o banco também | `./scripts/stop.sh [--banco]` | `.\scripts\stop.ps1 [-Banco]` |
+| **Testes unitários** (rápidos, sem Docker) | `./scripts/test.sh` | `.\scripts	est.ps1` |
+| **Tudo o que o CI roda** (formato, lint, unitários, integração e cobertura): para o banco de desenvolvimento antes e o religa no fim | `./scripts/verify.sh` | `.\scriptserify.ps1` |
+| **Rodar a coleção do Postman** no terminal (com a aplicação no ar) | `./scripts/postman.sh` | `.\scripts\postman.ps1` |
+
+Se o Windows bloquear a execução dos `.ps1`: `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`.
+
+O `start` confere antes de subir: `.env` existe, `WALLET_API_KEY` tem 16+ caracteres (o valor nunca é impresso), Docker responde e a porta 8080 está livre. Ele usa `docker compose up -d --no-recreate`: o banco **não tem volume nomeado**, então os dados vivem dentro do container, e recriá-lo (o compose faz isso se só mudar a grafia do caminho, como `c:\` e `C:\`) apagaria as carteiras. Parar (`stop --banco`) mantém os dados; `docker compose down` os apaga.
+
 ## Rodar a aplicação
+
+Sem os scripts, à mão:
 
 Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas e a `WALLET_API_KEY` dele; **sem uma `WALLET_API_KEY` de 16+ caracteres a aplicação não sobe**):
 
