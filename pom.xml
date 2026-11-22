@@ -128,6 +128,22 @@
 				</configuration>
 			</plugin>
 			<!--
+			  Testes de INTEGRACAO (classes *IT): rodam no failsafe, na fase verify, SEPARADOS dos unitarios (surefire, *Test).
+			  Precisam de Docker (Testcontainers sobe um Oracle de verdade). "./mvnw test" continua rapido e sem Docker.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+			<!--
 			  Formatacao automatica (o "Prettier" do Java): google-java-format, estilo AOSP (indentacao de 4 espacos,
 			  linha de ate 100 colunas, imports ordenados e sem imports sem uso).
 			  spotless:check (no verify e no CI) falha se algum arquivo nao estiver formatado.

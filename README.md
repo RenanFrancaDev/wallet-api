@@ -234,6 +234,15 @@ Toda escrita passa pelo package. As procedures **não fazem `COMMIT`**: quem cha
 ./mvnw test
 ```
 
+**Testes de integração (Oracle real)**: a aplicação inteira contra um Oracle descartável que o **Testcontainers** sobe em Docker, com a **mesma imagem do `docker-compose.yml`** (tag fixa) e os mesmos três usuários, criados pelo **mesmo** `db/init/01_usuarios.sh`. Exigem Docker e **não precisam do `.env` nem do banco do compose rodando**.
+
+```bash
+./mvnw verify                                                   # tudo: formato, lint, unitários e integração
+./mvnw test-compile failsafe:integration-test failsafe:verify   # só os testes de integração (classes *IT)
+```
+
+A primeira execução baixa a imagem e o Oracle leva cerca de 2 minutos para ficar pronto. **Com pouca memória** (o Docker precisa de uns 4 GB), pare o banco de desenvolvimento antes (`docker compose stop`): dois Oracles ao mesmo tempo não cabem. Hoje cobrem (`BancoIT`): migrations aplicadas e sem objeto inválido, privilégio mínimo do `WALLET_APP`, extrato imutável até para o dono, `CHECK` de saldo e trilha de auditoria.
+
 **Camada de banco**, com o banco no ar e as migrations aplicadas (basta ter subido a aplicação uma vez):
 
 ```bash
@@ -255,15 +264,17 @@ Para ver o teste falhar de verdade, remova temporariamente o `FOR UPDATE WAIT 5`
 Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21), em jobs encadeados:
 
 ```
-Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
+Qualidade  ->  Testes unitários  ----\
+           ->  Testes de integração  ->  Build  ->  Build e testes (portão final)
 ```
 
 | Job | O que roda |
 |---|---|
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
 | **Testes unitários** | os 122 testes (`./mvnw test`), sem banco e sem Docker |
+| **Testes de integração** | os testes `*IT` contra um Oracle de verdade em Docker (Testcontainers), em paralelo com os unitários |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
-| **Build e testes** | portão final: só passa se os três acima passarem |
+| **Build e testes** | portão final: só passa se os quatro acima passarem |
 
 O job `Build e testes` é o único **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir tudo localmente: `./mvnw -B verify`.
 

@@ -280,6 +280,32 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 - Não há teste que suba o springdoc inteiro (isso exigiria o contexto completo, com banco). Os testes cobrem a configuração e o *customizer* como unidades; o contrato gerado foi verificado contra a aplicação real. Com o Testcontainers, um teste de integração poderia baixar `/v3/api-docs` e conferir as rotas.
 - Não commitei uma cópia do `openapi.json`: ela envelheceria sem um teste que detecte divergência.
 
+## 30. Testes de integração contra um Oracle real (Testcontainers), separados dos unitários
+
+**Decisão:** as classes `*IT` sobem a aplicação inteira contra um Oracle descartável criado pelo Testcontainers, e rodam no *failsafe* (fase `verify`), não no *surefire*. Os testes unitários (`*Test`) continuam em `./mvnw test`, rápidos e sem Docker.
+
+**Por quê Oracle real e não um banco em memória:** o enunciado proíbe banco em memória, e o que está em jogo (PL/SQL, triggers, `FOR UPDATE`, privilégios entre schemas) não existe em outro banco. Um teste contra H2 não provaria nada disso.
+
+**Fidelidade ao ambiente real:**
+- **Mesma imagem** do `docker-compose.yml`, com tag fixa (`gvenzl/oracle-free:23.26.4-slim-faststart`), nunca `latest`.
+- Os três usuários são criados pelo **mesmo script** `db/init/01_usuarios.sh`, copiado para o container, e não por um atalho do teste: se o script quebrar, o teste quebra. Foi esse tipo de falha que apareceu antes: um `CREATE SEQUENCE` que faltava para o `WALLET_AUDIT`, descoberto ao aplicar tudo do zero à mão; agora o teste refaz esse caminho a cada execução.
+- As migrations rodam pelo `FlywayConfig` da aplicação, e a aplicação conecta como `WALLET_APP`, o usuário de privilégio mínimo.
+
+**Container único para todas as classes** (padrão "singleton"): sobe uma vez e todas o reaproveitam; o Testcontainers o encerra ao fim. Os testes não dependem de estado limpo: cada um cria a sua própria carteira e só consulta o que é dela.
+
+**Propriedades dinâmicas** (`@DynamicPropertySource`) fornecem as senhas e a chave, com a mesma precedência sobre qualquer `.env` da máquina: o teste não depende do `.env` nem do banco do compose rodando.
+
+**O que `BancoIT` prova** (antes só verificado à mão com `sqlplus`, agora no CI): migrations aplicadas e sem objeto inválido; o `WALLET_APP` sem DML nem leitura das tabelas e sem acesso à auditoria; extrato imutável até para o dono; `CHECK` de saldo; e a trilha com saldo anterior, novo, operação e usuário, com a alteração por SQL direto aparecendo sem operação.
+
+**Dois problemas reais que apareceram:**
+- O prazo padrão de inicialização do Testcontainers (~1 min) é menor do que o Oracle precisa nesta máquina (~2 min); o log mostrava o banco subindo normalmente quando o teste desistiu. Subi o teto para 5 minutos, que também dá folga ao CI. É só um teto: o teste segue assim que o banco responde.
+- O driver da Oracle recusa `commit()` com auto-commit ligado; as conexões diretas dos testes usam auto-commit desligado e confirmam explicitamente.
+
+**Limitações:**
+- Lento: a primeira execução baixa a imagem e o banco leva cerca de 2 minutos para ficar pronto. Por isso ficam em um job próprio do CI, em paralelo com os unitários.
+- Exige Docker e memória (uns 4 GB): em máquina modesta é preciso parar o banco de desenvolvimento antes.
+- Um único banco compartilhado por todas as classes `*IT`: elas não podem rodar em paralelo entre si.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

@@ -2,7 +2,11 @@ name: CI
 
 # Pipeline em jobs separados (cada um falha e aparece no PR de forma independente):
 #
-#   Qualidade -> Testes -> Build -> Build e testes (portao final)
+#   Qualidade -> Testes unitarios ----\
+#              -> Testes de integracao -> Build -> Build e testes (portao final)
+#
+# Os testes de integracao (Testcontainers) sobem um Oracle de verdade em Docker e rodam em paralelo
+# com os unitarios, que sao rapidos e nao precisam de Docker.
 #
 # O job "Build e testes" e o UNICO exigido pela protecao de branch. Ele so passa se todos os outros
 # passarem; assim os jobs podem ser renomeados ou acrescentados sem mexer na regra do GitHub.
@@ -90,10 +94,41 @@ jobs:
           path: target/surefire-reports/
           retention-days: 7
 
+  integracao:
+    name: Testes de integracao (Oracle real)
+    runs-on: ubuntu-latest
+    needs: qualidade
+    timeout-minutes: 30 # baixar a imagem do Oracle e subir o banco levam alguns minutos
+
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar o Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # O runner ubuntu ja tem Docker. O Testcontainers sobe o Oracle (gvenzl/oracle-free, tag fixa) com os
+      # 3 usuarios criados por db/init/01_usuarios.sh, e a aplicacao roda inteira contra ele.
+      # Roda so as classes *IT (failsafe); os unitarios ja rodam no job "Testes unitarios".
+      - name: Testes de integracao (Testcontainers)
+        run: ./mvnw -B -ntp test-compile failsafe:integration-test failsafe:verify
+
+      - name: Guardar os relatorios de integracao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorios-de-integracao
+          path: target/failsafe-reports/
+          retention-days: 7
+
   build:
     name: Build (empacotar o jar)
     runs-on: ubuntu-latest
-    needs: testes
+    needs: [testes, integracao]
     timeout-minutes: 10
 
     steps:
@@ -116,17 +151,19 @@ jobs:
   build-e-testes:
     name: Build e testes
     runs-on: ubuntu-latest
-    needs: [qualidade, testes, build]
+    needs: [qualidade, testes, integracao, build]
     if: always()
 
     steps:
       - name: Conferir o resultado de todos os jobs
         run: |
-          echo "Qualidade: ${{ needs.qualidade.result }}"
-          echo "Testes:    ${{ needs.testes.result }}"
-          echo "Build:     ${{ needs.build.result }}"
+          echo "Qualidade:  ${{ needs.qualidade.result }}"
+          echo "Testes:     ${{ needs.testes.result }}"
+          echo "Integracao: ${{ needs.integracao.result }}"
+          echo "Build:      ${{ needs.build.result }}"
           if [ "${{ needs.qualidade.result }}" != "success" ] || \
              [ "${{ needs.testes.result }}" != "success" ] || \
+             [ "${{ needs.integracao.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ]; then
             echo "Algum job falhou ou foi cancelado."
             exit 1

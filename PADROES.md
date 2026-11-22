@@ -20,15 +20,17 @@ Um único comando roda tudo, na ordem do CI: `./mvnw verify`.
 O workflow [`ci.yml`](.github/workflows/ci.yml) roda em todo PR e push para `develop` e `main`, em jobs encadeados. Cada um falha e aparece no PR de forma independente, então dá para ver de relance onde quebrou:
 
 ```
-Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
+Qualidade  ->  Testes unitários  ----\
+           ->  Testes de integração  ->  Build  ->  Build e testes (portão final)
 ```
 
 | Job | O que roda | Falha quando | Como reproduzir |
 |---|---|---|---|
 | **Qualidade (formato, lint e tipos)** | `spotless:check`, `checkstyle:check`, `test-compile` | arquivo sem formatar, violação de lint ou aviso do compilador | `./mvnw spotless:check checkstyle:check test-compile` |
 | **Testes unitários** (só roda se a qualidade passar) | `./mvnw test`; resumo na página da execução e relatórios guardados por 7 dias | qualquer teste falha | `./mvnw test` |
+| **Testes de integração (Oracle real)** (só roda se a qualidade passar; em paralelo com os unitários) | `test-compile failsafe:integration-test failsafe:verify`: sobe um Oracle em Docker (Testcontainers) e roda as classes `*IT`; relatórios guardados por 7 dias | qualquer teste `*IT` falha, ou o banco não sobe | `./mvnw test-compile failsafe:integration-test failsafe:verify` (exige Docker) |
 | **Build** (só roda se os testes passarem) | `./mvnw -DskipTests package` | o jar executável não é gerado | `./mvnw -DskipTests package` |
-| **Build e testes** (portão final) | confere o resultado dos três acima | qualquer um não for `success` | `./mvnw verify` |
+| **Build e testes** (portão final) | confere o resultado dos quatro acima | qualquer um não for `success` | `./mvnw verify` (exige Docker) |
 
 **Por que jobs separados (e não um só):** o mesmo padrão dos pipelines dos projetos Node (lint, typecheck, testes e build como etapas distintas). Quem abre o PR vê em segundos se o problema é de formato, de lint, de teste ou de empacotamento, e a ordem economiza tempo: não se gasta o runner rodando testes em código que nem passa na qualidade.
 
@@ -54,7 +56,15 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | `OpenApiConfigTest` | 4 | o contrato declara a API key no header `X-API-Key` e a exige em todas as operações |
 | `RespostasDeErroCustomizerTest` | 8 | todo `4xx`/`5xx` aponta para o formato padrão de erro (inclusive quando o springdoc anexa o corpo de sucesso por engano), `401` em toda operação, respostas de sucesso intocadas |
 
-Entram nas próximas etapas: os testes de integração com Oracle real (Testcontainers) e o teste concorrente em Java; eles passam a fazer parte do job de testes.
+**Testes de integração (Oracle real)**, em `src/test/java/.../integracao/`, rodados pelo *failsafe* (classes `*IT`, fase `verify`), separados dos unitários para `./mvnw test` continuar rápido e sem Docker:
+
+| Classe | Testes | O que prova |
+|---|---|---|
+| `BancoIT` | 10 | migrations dos dois schemas aplicadas (6 e 2) e nenhum objeto inválido; o `WALLET_APP` não tem DML nem leitura das tabelas e não acessa a auditoria (`ORA-00942`, `PLS-00201`); lê as views e executa o package; o dono não escreve direto na trilha; extrato imutável até para o dono (`ORA-20005`); `CHECK` de saldo (`ORA-02290`); a trilha registra saldo anterior, novo, operação e usuário, e uma alteração por SQL direto fica sem operação |
+
+O container é **o mesmo** do `docker-compose.yml` (mesma imagem com tag fixa) e os três usuários são criados pelo **mesmo** script `db/init/01_usuarios.sh`: se a imagem ou o script mudar, o teste acompanha.
+
+Entra na próxima etapa: o teste **concorrente** em Java (threads com barreira) e os testes de ponta a ponta pela API.
 
 ## Hooks locais (opcional, recomendado)
 
