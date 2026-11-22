@@ -2,7 +2,7 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP. Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP e autenticação por **API key** (`X-API-Key`). Swagger e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
@@ -17,7 +17,7 @@ As decisões técnicas e os motivos estão em [DECISIONS.md](DECISIONS.md).
 ## Subir o banco
 
 ```bash
-cp .env.example .env        # troque os valores por senhas suas (só letras e números)
+cp .env.example .env        # troque os valores: senhas só com letras e números; WALLET_API_KEY com 16+ caracteres
 docker compose up -d
 docker compose logs -f      # espere aparecer "DATABASE IS READY TO USE!" (Ctrl+C sai dos logs)
 docker compose ps           # STATUS deve ficar "healthy"
@@ -88,7 +88,7 @@ db/                                scripts de init do container e testes de banc
 
 ## Rodar a aplicação
 
-Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas dele):
+Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas e a `WALLET_API_KEY` dele; **sem uma `WALLET_API_KEY` de 16+ caracteres a aplicação não sobe**):
 
 ```bash
 ./mvnw spring-boot:run
@@ -100,7 +100,7 @@ java -jar target/wallet-api-0.0.1-SNAPSHOT.jar
 Execute a partir da **raiz do projeto**, para a aplicação encontrar o `.env` (em container ou CI, as mesmas variáveis podem vir do ambiente). Na primeira subida o Flyway cria tudo; nas seguintes ele só valida (`Schema ... is up to date`).
 
 ```bash
-curl http://localhost:8080/actuator/health    # {"status":"UP"}
+curl http://localhost:8080/actuator/health    # {"status":"UP"}  (a única rota pública)
 ```
 
 ## Modelo de dados
@@ -113,6 +113,25 @@ Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, incl
 
 ## API
 
+### Autenticação (API key)
+
+**Todas as rotas exigem o header `X-API-Key`**, com o valor de `WALLET_API_KEY` do `.env`. A única exceção é `GET /actuator/health` (saúde), que orquestradores e monitoramento precisam chamar sem credencial.
+
+```bash
+export WALLET_API_KEY=...   # o mesmo valor do .env
+curl -H "X-API-Key: $WALLET_API_KEY" http://localhost:8080/wallets/21
+```
+
+Sem o header, ou com a chave errada ou vazia: `401` com o formato padrão de erro, e a mesma mensagem nos dois casos (para não ajudar quem tenta adivinhar):
+
+```json
+{"codigo":"NAO_AUTORIZADO","mensagem":"API key ausente ou inválida.","timestamp":"...","path":"/wallets/21","detalhes":[]}
+```
+
+Uma rota inexistente sem chave também devolve `401`, para não revelar quais rotas existem. A chave é comparada em tempo constante e nunca é escrita em log. Os exemplos abaixo já incluem o header (defina `WALLET_API_KEY` no seu shell, como acima).
+
+### Rotas
+
 | Método e rota | O que faz | Sucesso | Erros |
 |---|---|---|---|
 | `POST /wallets` | cria uma carteira com saldo `0.00`. Corpo opcional: `{"titular": "Maria"}` (até 120 caracteres) | `201` + header `Location` + carteira | `400` |
@@ -123,11 +142,11 @@ Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, incl
 Exemplo:
 
 ```bash
-curl -X POST http://localhost:8080/wallets -H 'Content-Type: application/json' -d '{"titular":"Maria"}'
+curl -X POST http://localhost:8080/wallets -H "X-API-Key: $WALLET_API_KEY" -H 'Content-Type: application/json' -d '{"titular":"Maria"}'
 # 201  {"id":21,"titular":"Maria","saldo":0.00,"criadaEm":"2026-11-21T11:51:33.635316Z"}
 
-curl http://localhost:8080/wallets/21
-curl http://localhost:8080/wallets/999999
+curl -H "X-API-Key: $WALLET_API_KEY" http://localhost:8080/wallets/21
+curl -H "X-API-Key: $WALLET_API_KEY" http://localhost:8080/wallets/999999
 # 404  {"codigo":"CARTEIRA_NAO_ENCONTRADA","mensagem":"Carteira não encontrada.","timestamp":"...","path":"/wallets/999999","detalhes":[]}
 ```
 
@@ -136,7 +155,7 @@ curl http://localhost:8080/wallets/999999
 ```bash
 # crédito de 100.00
 curl -X POST http://localhost:8080/wallets/21/transactions \
-  -H 'Content-Type: application/json' -H 'Idempotency-Key: pedido-123' \
+  -H "X-API-Key: $WALLET_API_KEY" -H 'Content-Type: application/json' -H 'Idempotency-Key: pedido-123' \
   -d '{"tipo":"CREDITO","valor":100.00}'
 # 201  {"id":21,"carteiraId":21,"tipo":"CREDITO","valor":100.00,"saldoApos":100.00,"chaveIdempotencia":"pedido-123",...}
 ```
@@ -151,7 +170,7 @@ curl -X POST http://localhost:8080/wallets/21/transactions \
 
 ```bash
 # 2 itens por página, a página 1 (a segunda), só novembro de 2026
-curl 'http://localhost:8080/wallets/21/transactions?page=1&size=2&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z'
+curl -H "X-API-Key: $WALLET_API_KEY" 'http://localhost:8080/wallets/21/transactions?page=1&size=2&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z'
 # 200  {"itens":[{"id":22,...,"saldoApos":70.00,...}], "pagina":1, "tamanho":2, "totalItens":5, "totalPaginas":3}
 ```
 
@@ -229,7 +248,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | Job | O que roda |
 |---|---|
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
-| **Testes unitários** | os 92 testes (`./mvnw test`), sem banco e sem Docker |
+| **Testes unitários** | os 108 testes (`./mvnw test`), sem banco e sem Docker |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
 | **Build e testes** | portão final: só passa se os três acima passarem |
 
@@ -245,4 +264,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).
+OpenAPI/Swagger (documentando também o header `X-API-Key`) e testes de integração com Testcontainers (incluindo concorrência).
