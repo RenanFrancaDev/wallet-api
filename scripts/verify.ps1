@@ -1,6 +1,6 @@
 # O que o CI roda: formato, lint, compilacao estrita, unitarios, integracao (Oracle real no Docker) e o piso de
 # cobertura. Para o banco de desenvolvimento antes (o Docker nao tem memoria para dois Oracles) e o religa no fim,
-# mesmo se algo falhar. Leva uns 4 minutos. Versao PowerShell do verify.sh.
+# mesmo se algo falhar. Leva uns 4 minutos.
 # Uso: .\scripts\verify.ps1
 Set-Location (Split-Path -Parent $PSScriptRoot)
 

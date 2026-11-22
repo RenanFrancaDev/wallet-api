@@ -347,21 +347,21 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações.** O Postman roda uma requisição por vez: ele mostra cada regra, mas não a disputa entre chamadas simultâneas, que é coberta pelo `ConcorrenciaIT`. A coleção depende de ordem (a pasta 2 usa a carteira da pasta 1) e não é rodada no CI.
 
-## 34. Scripts de dia a dia em Bash e PowerShell (o "npm run" do projeto)
+## 34. Scripts de dia a dia em PowerShell (o "npm run" do projeto)
 
 **Contexto.** O Maven não tem um bloco `scripts` como o `package.json`. Subir o ambiente exigia lembrar vários passos e, se a aplicação subisse antes de o Oracle estar pronto, o erro de conexão era pouco claro.
 
-**Decisão.** Cinco atalhos em `scripts/`, cada um em `.sh` (Bash) e `.ps1` (PowerShell) com o mesmo comportamento: `start`, `stop`, `test`, `verify` e `postman`. Preferi scripts a um Makefile porque não há `make` no Windows deste projeto e porque eles servem também ao CI e a quem avalia, sem instalar nada.
+**Decisão.** Cinco atalhos em `scripts/`: `start`, `stop`, `test`, `verify` e `postman`, todos em PowerShell (`.ps1`). Cheguei a escrever e testar também a versão em Bash, mas removi: manter duas cópias do mesmo comportamento dobra a manutenção, e o ambiente do projeto é Windows. Preferi scripts a um Makefile porque não há `make` no Windows e eles não exigem instalar nada.
 
-**Cuidados embutidos.** O `start` confere `.env`, tamanho da `WALLET_API_KEY` (sem imprimi-la), Docker e porta livre, e espera o banco ficar `healthy`. O `stop` só encerra o processo da porta 8080 se a linha de comando for a da nossa aplicação. O `verify` para o banco de desenvolvimento (o Docker não comporta dois Oracles) e o religa no fim mesmo se o build falhar (`trap` no Bash, `try/finally` no PowerShell).
+**Cuidados embutidos.** O `start` confere `.env`, tamanho da `WALLET_API_KEY` (sem imprimi-la), Docker e porta livre, e espera o banco ficar `healthy`. O `stop` só encerra o processo da porta 8080 se a linha de comando for a da nossa aplicação. O `verify` para o banco de desenvolvimento (o Docker não comporta dois Oracles) e o religa no fim mesmo se o build falhar (`try/finally`).
 
 **Achado durante o teste dos scripts.** O banco **não tem volume nomeado**: os dados vivem na camada do container. O `docker compose up -d` recriou o container quando mudei de Git Bash (`c:\dev\...`) para PowerShell (`C:\dev\...`), porque a grafia do caminho entrou no cálculo de mudança de configuração. Recriar apaga as carteiras. Os scripts passam a usar `up -d --no-recreate`. Deixei o `docker-compose.yml` como está (mudar a infraestrutura é decisão à parte); um volume nomeado resolveria de vez.
 
-**Armadilhas do PowerShell 5.1.** (1) Arquivos `.ps1` sem BOM com acento são lidos na codepage errada: os `.ps1` ficam só em ASCII. (2) O `docker` escreve avisos no stderr e, com `$ErrorActionPreference = 'Stop'`, isso derrubava o script: o `start.ps1` não usa o modo `Stop` e chama o docker por `cmd /c`. (3) No Bash, a saída acentuada do `powershell.exe` chega corrompida: o PowerShell devolve uma palavra e o `stop.sh` escreve a mensagem.
+**Armadilhas do PowerShell 5.1.** (1) Arquivos `.ps1` sem BOM com acento são lidos na codepage errada: os `.ps1` ficam só em ASCII. (2) O `docker` escreve avisos no stderr e, com `$ErrorActionPreference = 'Stop'`, isso derrubava o script: o `start.ps1` não usa o modo `Stop` e chama o docker por `cmd /c`.
 
-**Verificação.** Os dois conjuntos foram executados de verdade: subir, recusar uma segunda subida, rodar a coleção do Postman (22 requisições, 23 asserções, 0 falhas), encerrar, e `verify` completo.
+**Verificação.** Executados de verdade: subir, recusar uma segunda subida, rodar a coleção do Postman (22 requisições, 23 asserções, 0 falhas), encerrar, e `verify` completo (122 unitários, 25 de integração e o piso de cobertura).
 
-**Limitações.** Não rodam no CI. O `start` espera no máximo 5 minutos pelo banco.
+**Limitações.** Só Windows (consultam portas e processos com cmdlets do Windows). Não rodam no CI. O `start` espera no máximo 5 minutos pelo banco.
 
 ## Limitações conhecidas
 

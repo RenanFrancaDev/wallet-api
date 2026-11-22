@@ -1,5 +1,5 @@
 # Encerra a aplicacao (a que escuta na porta 8080), mas so se for mesmo a nossa. Com -Banco, desliga o
-# banco tambem (parado, o container mantem os dados; eles so se perdem se o container for removido ou recriado). Versao PowerShell do stop.sh.
+# banco tambem (parado, o container mantem os dados; eles so se perdem se o container for removido ou recriado).
 # Uso: .\scripts\stop.ps1 [-Banco]
 param([switch]$Banco)
 Set-Location (Split-Path -Parent $PSScriptRoot)

@@ -1,5 +1,5 @@
 # Sobe tudo para desenvolver: confere o .env, liga o banco (Docker), espera ele ficar "healthy" e roda a
-# aplicacao em primeiro plano (Ctrl+C encerra). Equivalente ao "npm run dev" (versao PowerShell do start.sh).
+# aplicacao em primeiro plano (Ctrl+C encerra). Equivalente ao "npm run dev".
 # Uso: .\scripts\start.ps1
 # Se o Windows bloquear scripts: powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1
 Set-Location (Split-Path -Parent $PSScriptRoot)

@@ -1,5 +1,5 @@
 # Roda a colecao do Postman no terminal (newman), contra a aplicacao ja no ar. A chave vem do .env e nao e
-# impressa. Versao PowerShell do postman.sh.
+# impressa.
 # Uso: .\scripts\postman.ps1   (com a aplicacao rodando: .\scripts\start.ps1 em outro terminal)
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
