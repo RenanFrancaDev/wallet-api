@@ -185,16 +185,24 @@ Para ver o teste falhar de verdade, remova temporariamente o `FOR UPDATE WAIT 5`
 
 ## Integração contínua (CI)
 
-Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21):
+Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21), em jobs encadeados:
 
-1. **Formatação** (`./mvnw spotless:check`): Spotless com google-java-format. Para corrigir: `./mvnw spotless:apply`.
-2. **Lint** (`./mvnw checkstyle:check`): Checkstyle com um conjunto enxuto de regras (imports, nomes, bugs comuns, sem `System.out`).
-3. **Compilação estrita** (`./mvnw test-compile`): o `pom.xml` liga `-Xlint:all` e `failOnWarning`, então qualquer aviso do compilador quebra o build. Em Java, a checagem de tipos é o próprio compilador.
-4. **Testes unitários** (`./mvnw verify`): sem banco e sem Docker.
+```
+Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
+```
 
-O job `Build e testes` é **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir o mesmo localmente: `./mvnw -B verify`.
+| Job | O que roda |
+|---|---|
+| **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
+| **Testes unitários** | os 48 testes (`./mvnw test`), sem banco e sem Docker |
+| **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
+| **Build e testes** | portão final: só passa se os três acima passarem |
 
-Os padrões, as ferramentas e o motivo de cada escolha estão em [PADROES.md](PADROES.md).
+O job `Build e testes` é o único **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir tudo localmente: `./mvnw -B verify`.
+
+Há ainda hooks de Git opcionais (`commit-msg` valida o padrão das mensagens; `pre-push` roda formato, lint e testes antes de enviar). Ativação: `git config core.hooksPath .githooks`.
+
+Os padrões, as ferramentas, os testes que o CI exige e o motivo de cada escolha estão em [PADROES.md](PADROES.md).
 
 ## Provas de privilégio mínimo
 

@@ -195,6 +195,18 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Com mais tempo:** SpotBugs ou Error Prone para análise de bugs mais profunda, e Javadoc obrigatório só na API pública.
 
+## 25. Pipeline em jobs encadeados e um portão final com nome fixo
+
+**Decisão:** o CI deixou de ser um job único e passou a ter `Qualidade` (formato, lint e tipos), `Testes unitários`, `Build` e um job final `Build e testes`, encadeados com `needs:`.
+
+**Por quê:** é o padrão dos pipelines dos projetos Node de referência (lint, typecheck, testes e build como etapas distintas). No PR se vê de relance se a falha é de formato, de lint, de teste ou de empacotamento, e a ordem economiza tempo de runner: não se rodam testes em código que não passa na qualidade.
+
+**O portão final com nome fixo:** a proteção de branch exige só o check `Build e testes`. Esse job passa apenas se os outros três passarem. Assim, renomear ou acrescentar jobs não exige mexer na regra do GitHub; sem esse job, renomear um job exigido deixaria um check que nunca aparece e bloquearia todos os PRs.
+
+**Hooks locais (opcionais):** `commit-msg` valida o padrão `tipo: descrição` e `pre-push` roda formato, lint e testes. São uma conveniência, não a barreira: quem não os ativa continua barrado pelo CI. Não dependem de Node (o equivalente ao Husky aqui é `core.hooksPath` apontando para uma pasta versionada).
+
+**Não incluído ainda:** gate de cobertura (JaCoCo, com limite que só sobe, como nos projetos de referência) e os testes de integração com Testcontainers; eles entram nos jobs existentes.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
