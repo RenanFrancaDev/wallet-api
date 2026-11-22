@@ -321,6 +321,20 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações.** Tudo roda em uma única instância da aplicação, com pool de 10 conexões do Hikari; o lock é do banco, então várias instâncias seriam protegidas igualmente, mas isso não foi exercitado. Testes de concorrência têm um componente de temporização: a barreira aumenta muito a chance de colisão, mas não a garante.
 
+## 32. Cobertura de testes com JaCoCo e um piso que só sobe
+
+**Contexto.** Os testes passam, mas nada impedia um PR futuro de adicionar código sem teste algum.
+
+**Decisão.** JaCoCo mede a cobertura dos testes unitários (surefire) e de integração (failsafe) em arquivos separados, que são juntados no `verify`. O build falha abaixo de **90% das linhas e 80% dos ramos**. No CI, um job próprio (`Cobertura`) baixa os dados dos dois jobs de teste, junta, gera o relatório HTML e confere o piso; ele é exigido pelo portão final.
+
+**Números reais (medidos).** Linhas 97,6% (328 de 336), ramos 88,1% (74 de 84), com 122 unitários e 25 de integração. O que falta: 2 linhas no `ApiKeyFilter`, 3 no `GlobalExceptionHandler` e 3 espalhadas (um caminho de erro cada).
+
+**Por que o piso é menor que o valor atual.** Uma folga evita quebrar o build por mudar uma linha de lugar, e ainda barra uma queda de verdade. A regra de equipe é o piso só subir.
+
+**Por que juntar unitários e integração.** Os repositórios e o fluxo HTTP completo só são exercitados de verdade com o banco; medir só os unitários mostraria um número enganosamente baixo e empurraria para testes redundantes.
+
+**Limitações.** Cobertura mede o que foi executado, não verificado: um teste sem `assert` dá 100%. Por isso a garantia de verdade vem do teste do teste (item 31), e o JaCoCo é só um piso contra regressão. A classe `main` fica fora da medição, e o PL/SQL não é medido pelo JaCoCo (tem `db/tests` e o `BancoIT`).
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

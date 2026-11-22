@@ -268,13 +268,15 @@ O teste de concorrência confere: saldo nunca negativo, nenhuma operação em do
 
 Para ver o teste falhar de verdade, remova temporariamente o `FOR UPDATE WAIT 5` do `PKG_WALLET`: o cenário 1 passa a aplicar 20 débitos em vez de 10 (ver [DECISIONS.md](DECISIONS.md)).
 
+**Cobertura:** `./mvnw verify` gera o relatório HTML em `target/site/jacoco/index.html` (linhas e ramos por classe) e falha se ficar abaixo do piso de 90% das linhas e 80% dos ramos.
+
 ## Integração contínua (CI)
 
 Todo PR para `develop` e `main` roda o workflow [`ci.yml`](.github/workflows/ci.yml) (GitHub Actions, Java 21), em jobs encadeados:
 
 ```
 Qualidade  ->  Testes unitários  ----\
-           ->  Testes de integração  ->  Build  ->  Build e testes (portão final)
+           ->  Testes de integração  ->  Cobertura  ->  Build  ->  Build e testes (portão final)
 ```
 
 | Job | O que roda |
@@ -282,8 +284,9 @@ Qualidade  ->  Testes unitários  ----\
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
 | **Testes unitários** | os 122 testes (`./mvnw test`), sem banco e sem Docker |
 | **Testes de integração** | os testes `*IT` contra um Oracle de verdade em Docker (Testcontainers), em paralelo com os unitários |
+| **Cobertura** | JaCoCo junta a cobertura dos unitários e da integração e exige no mínimo **90% das linhas e 80% dos ramos** (hoje 97,6% e 88,1%) |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
-| **Build e testes** | portão final: só passa se os quatro acima passarem |
+| **Build e testes** | portão final: só passa se os cinco acima passarem |
 
 O job `Build e testes` é o único **exigido pela proteção de branch**: sem ele verde, o merge é bloqueado. Para reproduzir tudo localmente: `./mvnw -B verify`.
 
