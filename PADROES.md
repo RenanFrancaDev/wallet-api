@@ -13,7 +13,53 @@ Tudo aqui é **automatizado e verificado no CI**: ninguém discute estilo em rev
 
 Um único comando roda tudo, na ordem do CI: `./mvnw verify`.
 
-> Entram nas próximas etapas: JaCoCo (cobertura mínima), o CI separado em jobs e um hook de `pre-push`.
+> Entra na próxima etapa: JaCoCo (cobertura mínima).
+
+## O que o CI exige (e o que cada job faz)
+
+O workflow [`ci.yml`](.github/workflows/ci.yml) roda em todo PR e push para `develop` e `main`, em jobs encadeados. Cada um falha e aparece no PR de forma independente, então dá para ver de relance onde quebrou:
+
+```
+Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
+```
+
+| Job | O que roda | Falha quando | Como reproduzir |
+|---|---|---|---|
+| **Qualidade (formato, lint e tipos)** | `spotless:check`, `checkstyle:check`, `test-compile` | arquivo sem formatar, violação de lint ou aviso do compilador | `./mvnw spotless:check checkstyle:check test-compile` |
+| **Testes unitários** (só roda se a qualidade passar) | `./mvnw test`; resumo na página da execução e relatórios guardados por 7 dias | qualquer teste falha | `./mvnw test` |
+| **Build** (só roda se os testes passarem) | `./mvnw -DskipTests package` | o jar executável não é gerado | `./mvnw -DskipTests package` |
+| **Build e testes** (portão final) | confere o resultado dos três acima | qualquer um não for `success` | `./mvnw verify` |
+
+**Por que jobs separados (e não um só):** o mesmo padrão dos pipelines dos projetos Node (lint, typecheck, testes e build como etapas distintas). Quem abre o PR vê em segundos se o problema é de formato, de lint, de teste ou de empacotamento, e a ordem economiza tempo: não se gasta o runner rodando testes em código que nem passa na qualidade.
+
+**Por que um job final com nome fixo:** a proteção de branch exige apenas o check `Build e testes`. Como ele só passa se todos os outros passarem, os jobs podem ser renomeados ou ganhar novos colegas sem mexer na regra do GitHub. Sem isso, renomear um job deixaria um check obrigatório que nunca aparece, e nenhum PR poderia ser mergeado.
+
+**Os testes que precisam passar hoje:** os 48 testes unitários (JUnit 5 e Mockito), sem banco e sem Docker:
+
+| Classe | Testes | O que prova |
+|---|---|---|
+| `ErroNegocioTest` | 13 | catálogo: cada código `ORA-20001` a `20006` vira o erro e o status HTTP certos |
+| `GlobalExceptionHandlerTest` | 14 | tradução de erros: saldo insuficiente vira 422, a mensagem do Oracle não vaza, erros inesperados viram 500 |
+| `CarteiraServiceTest` | 5 | regras do serviço (criar e consultar, carteira inexistente) |
+| `CarteiraControllerTest` | 10 | camada web: status, `Location`, validação e formato padrão de erro |
+| `CarteiraTest` | 6 | o saldo sempre sai com 2 casas decimais |
+
+Entram nas próximas etapas: os testes de integração com Oracle real (Testcontainers) e o teste concorrente em Java; eles passam a fazer parte do job de testes.
+
+## Hooks locais (opcional, recomendado)
+
+Equivalem ao Husky dos projetos Node. Rodam na sua máquina **antes** do CI, para você descobrir o problema em segundos e não depois do push. Ativação, uma vez por clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+| Hook | O que faz |
+|---|---|
+| **`commit-msg`** | valida a mensagem no padrão `tipo(escopo): descrição` (`feat`, `fix`, `chore`, `docs`, `test`, `style`, `refactor`, `perf`, `build`, `ci`, `revert`), com até 100 caracteres na primeira linha. Merges e reverts do Git passam |
+| **`pre-push`** | roda formato, lint e testes (`spotless:check checkstyle:check test`) antes de enviar |
+
+Para pular em emergência: `git push --no-verify`. O CI continua bloqueando o merge, então o hook é uma conveniência, não a única barreira.
 
 ## Formatação
 
