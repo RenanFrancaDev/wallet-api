@@ -1,0 +1,26 @@
+#!/bin/sh
+# Valida a mensagem de commit no padrao Conventional Commits: tipo(escopo opcional): descricao
+# Equivale ao hook commit-msg (commitlint) dos projetos Node.
+#
+# Ativar UMA vez por clone:  git config core.hooksPath .githooks
+
+mensagem_arquivo="$1"
+primeira_linha=$(head -n 1 "$mensagem_arquivo")
+
+# Commits gerados pelo proprio Git (merge, revert, fixup) passam sem validacao.
+case "$primeira_linha" in
+  Merge\ * | Revert\ * | fixup!* | squash!*) exit 0 ;;
+esac
+
+if ! printf '%s' "$primeira_linha" | grep -Eq '^(feat|fix|chore|docs|test|style|refactor|perf|build|ci|revert)(\([a-z0-9._/-]+\))?!?: .+'; then
+  echo "Mensagem de commit fora do padrao: \"$primeira_linha\""
+  echo "Use: tipo(escopo opcional): descricao"
+  echo "Tipos: feat, fix, chore, docs, test, style, refactor, perf, build, ci, revert"
+  echo "Exemplo: feat: criar e consultar carteira"
+  exit 1
+fi
+
+if [ "${#primeira_linha}" -gt 100 ]; then
+  echo "A primeira linha da mensagem tem ${#primeira_linha} caracteres (maximo 100)."
+  exit 1
+fi
