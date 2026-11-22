@@ -181,6 +181,8 @@
 					</execution>
 					<execution>
 						<id>agente-integracao</id>
+						<!-- initialize (e nao o padrao pre-integration-test): o job de integracao do CI chama o failsafe direto, sem passar por essa fase. -->
+						<phase>initialize</phase>
 						<goals>
 							<goal>prepare-agent-integration</goal>
 						</goals>
