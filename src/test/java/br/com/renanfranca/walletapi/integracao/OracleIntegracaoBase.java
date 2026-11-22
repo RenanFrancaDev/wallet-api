@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.oracle.OracleContainer;
@@ -81,6 +82,18 @@ abstract class OracleIntegracaoBase {
         registro.add("WALLET_APP_PASSWORD", () -> SENHA_APP);
         registro.add("WALLET_AUDIT_PASSWORD", () -> SENHA_AUDIT);
         registro.add("WALLET_API_KEY", () -> CHAVE_API);
+    }
+
+    @LocalServerPort int porta;
+
+    /** Cliente HTTP com a API key correta. */
+    ClienteHttp cliente() {
+        return new ClienteHttp(porta, CHAVE_API);
+    }
+
+    /** Cliente HTTP que NÃO envia o header X-API-Key. */
+    ClienteHttp clienteSemChave() {
+        return new ClienteHttp(porta, null);
     }
 
     /**
