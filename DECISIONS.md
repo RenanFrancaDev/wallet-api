@@ -335,6 +335,18 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações.** Cobertura mede o que foi executado, não verificado: um teste sem `assert` dá 100%. Por isso a garantia de verdade vem do teste do teste (item 31), e o JaCoCo é só um piso contra regressão. A classe `main` fica fora da medição, e o PL/SQL não é medido pelo JaCoCo (tem `db/tests` e o `BancoIT`).
 
+## 33. Coleção do Postman versionada, sem a chave, e testada de verdade
+
+**Contexto.** Quem avalia (e eu mesmo, na entrevista) precisa chamar a API e simular operações sem escrever `curl`. O Swagger UI já cobre a leitura; faltava um roteiro executável das regras de negócio.
+
+**Decisão.** Uma coleção Postman v2.1 e um ambiente local em `docs/postman/`. A coleção é um **roteiro**: cria a carteira, guarda o `id` em variável, e cada requisição traz asserções (`pm.test`) para o status e para os pontos que importam (saldo após cada operação, `Idempotent-Replayed`, mesmo lançamento na repetição). As chaves de idempotência são geradas por requisição (`{{$guid}}`) e guardadas, para a repetição reaproveitar a mesma.
+
+**A API key não está nos arquivos.** O ambiente traz `apiKey` vazia e do tipo `secret`; quem usa preenche com o valor do `.env`. Conferi que o valor real não aparece em nenhum dos dois arquivos.
+
+**Verificação.** Não confiei só em escrever o JSON: rodei a coleção inteira com o **newman** contra a aplicação real e o Oracle real. Resultado: 22 requisições, 23 asserções, 0 falhas. A primeira execução achou dois erros do **meu** roteiro (não da API): `headers.get` devolve `undefined` (não `null`) quando o header não existe, e eu gravava o id do lançamento depois de uma asserção que podia falhar.
+
+**Limitações.** O Postman roda uma requisição por vez: ele mostra cada regra, mas não a disputa entre chamadas simultâneas, que é coberta pelo `ConcorrenciaIT`. A coleção depende de ordem (a pasta 2 usa a carteira da pasta 1) e não é rodada no CI.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

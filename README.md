@@ -124,6 +124,27 @@ A documentação é **pública** (o contrato não expõe dado nenhum); **as rota
 
 O contrato é **gerado a partir do código** (springdoc-openapi 3.2.1), então não fica desatualizado em relação às rotas: cada operação traz resumo, parâmetros, regras de idempotência, exemplos e **todos os códigos de resposta**, e as respostas de erro (`400`, `401`, `404`, `409`, `422`, `503`) apontam para o mesmo formato padrão de erro. Para guardar uma cópia: `curl http://localhost:8080/v3/api-docs > openapi.json`.
 
+## Testar e simular transações no Postman
+
+Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisições** (cada uma já com testes automáticos) e um ambiente local:
+
+| Arquivo | O que é |
+|---|---|
+| `wallet-api.postman_collection.json` | a coleção: saúde, carteiras, operações com idempotência, validações, extrato, segurança e documentação |
+| `wallet-api.local.postman_environment.json` | variáveis `baseUrl` (`http://localhost:8080`) e `apiKey` (vazia, do tipo secreto) |
+
+**Passo a passo:**
+1. Suba o banco e a aplicação (`docker compose up -d` e `./mvnw spring-boot:run`).
+2. No Postman: **Import** e selecione os dois arquivos.
+3. Escolha o ambiente **Wallet API - local** (canto superior direito) e preencha a variável **`apiKey`** com o valor de `WALLET_API_KEY` do seu `.env`. A chave **não vem no arquivo** de propósito: ela nunca deve ser versionada.
+4. Rode as pastas **em ordem** (ou clique com o botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
+
+**A simulação da pasta 2** (a que mostra a regra de negócio): crédito de 100,00 (saldo 100) → o mesmo crédito repetido com a mesma chave (responde `201` com o **mesmo** lançamento e `Idempotent-Replayed: true`, saldo continua 100) → a mesma chave com outro valor (`409`) → débito de 30,00 (saldo 70) → débito de 500,00 (`422`, nada muda) → consulta do saldo (70,00). Para repetir só o passo de idempotência com chaves novas, rode de novo o **Crédito de 100.00**: ele gera uma chave nova a cada execução.
+
+**Sem Postman:** a mesma coleção roda no terminal com o newman: `npx newman run docs/postman/wallet-api.postman_collection.json -e docs/postman/wallet-api.local.postman_environment.json --env-var "apiKey=$WALLET_API_KEY"`.
+
+> O Postman executa as requisições **uma depois da outra**. A concorrência de verdade (dezenas de chamadas simultâneas) é provada pelo `ConcorrenciaIT` (ver [Como testar](#como-testar)); no Postman dá para ver o resultado de cada regra, não a disputa.
+
 ## API
 
 ### Autenticação (API key)
