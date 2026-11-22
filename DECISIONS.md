@@ -243,6 +243,24 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **O `WHERE` é montado só com os filtros informados**, em vez do padrão `(:from IS NULL OR data >= :from)`: ligar um `null` a um parâmetro de data costuma exigir o tipo SQL explícito com o driver da Oracle, e montar o texto só com o que foi informado evita esse problema (não testei a alternativa; escolhi o caminho que dispensa o risco).
 
+## 28. Autenticação por API key em um filtro próprio, falhando fechado
+
+**Decisão:** um filtro (`ApiKeyFilter`) exige o header `X-API-Key` em todas as rotas, menos `GET /actuator/health`. Sem o header, ou com chave errada, é `401` no formato padrão de erro (`NAO_AUTORIZADO`).
+
+**Por que um filtro e não o Spring Security:** o enunciado pede só "autenticação por API key" e exclui JWT e OAuth. O Spring Security traria uma cadeia de filtros inteira, sessões e CSRF para configurar e desligar. Um filtro pequeno (cerca de 30 linhas de lógica) faz o necessário e eu consigo explicar cada linha. O custo é manter eu mesmo o que o framework daria pronto; com múltiplos clientes, papéis ou rotação eu migraria para ele.
+
+**Falha fechada:** a chave vem de `WALLET_API_KEY` (o mesmo `.env` das senhas). Se faltar, a aplicação não sobe (o Spring não resolve o placeholder); se tiver menos de 16 caracteres, a configuração recusa. Nunca existe "sem chave, API aberta por esquecimento". Verificado: com uma chave curta a aplicação se recusou a subir.
+
+**Comparação em tempo constante:** comparo os hashes SHA-256 da chave recebida e da esperada com `MessageDigest.isEqual`. Um `equals` de texto termina no primeiro caractere diferente, e o tempo de resposta poderia revelar a chave aos poucos; comparar hashes também elimina o vazamento do tamanho.
+
+**Mesma resposta para "faltou" e "estava errada",** e rota inexistente sem chave também é `401`, para não revelar quais rotas existem. A chave nunca é escrita em log (verificado: zero ocorrências no log da aplicação).
+
+**O `401` sai no mesmo formato dos demais erros:** o filtro roda antes do Spring MVC e não passa pelo `@RestControllerAdvice` sozinho, então ele entrega a exceção ao `HandlerExceptionResolver`, que a leva ao `GlobalExceptionHandler`.
+
+**Só a saúde é pública,** e só o caminho exato (`/actuator/health` e abaixo dele): `/actuator/healthz` e `/wallets/actuator/health` continuam exigindo chave (testado). O `/actuator/info` também exige.
+
+**Limitações e o que eu faria com mais tempo:** uma única chave compartilhada (sem identificar o cliente), trocada por reinício; a API fala HTTP puro, então em produção a chave só é segura atrás de TLS (HTTPS terminado em um proxy ou balanceador). Com mais tempo: várias chaves por cliente guardadas com hash, rotação sem parar o serviço, limite de taxa por chave e auditoria de qual chave fez cada operação.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
