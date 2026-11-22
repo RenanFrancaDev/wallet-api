@@ -1,0 +1,1047 @@
+{
+  "info": {
+    "_postman_id": "93dffbcc-adf9-5d27-b14c-300f6b6edbaf",
+    "name": "Wallet API",
+    "description": "Coleção para testar e simular transações da Wallet API.\n\nComo usar: importe esta coleção e o ambiente 'Wallet API - local', escolha o ambiente, preencha a variável apiKey com o valor de WALLET_API_KEY do seu .env e rode as pastas em ordem (ou use o Collection Runner na coleção inteira).\n\nA chave NUNCA deve ser colocada em arquivo versionado.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "X-API-Key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{apiKey}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "carteiraId",
+      "value": ""
+    },
+    {
+      "key": "chaveCredito",
+      "value": ""
+    },
+    {
+      "key": "chaveDebito",
+      "value": ""
+    },
+    {
+      "key": "chaveRecusada",
+      "value": ""
+    },
+    {
+      "key": "chaveInvalida",
+      "value": "chave-qualquer"
+    },
+    {
+      "key": "lancamentoCredito",
+      "value": ""
+    },
+    {
+      "key": "periodoDe",
+      "value": ""
+    },
+    {
+      "key": "periodoAte",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Saúde (rota pública)",
+      "description": "Única rota de negócio que NÃO exige a API key.",
+      "item": [
+        {
+          "name": "Saúde da aplicação",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "description": "Deve responder 200 com status UP, mesmo sem a chave.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 e UP', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('UP'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1. Carteiras",
+      "description": "Criar uma carteira e consultar o saldo. A criação guarda o id em carteiraId para as próximas requisições.",
+      "item": [
+        {
+          "name": "Criar carteira",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets"
+              ]
+            },
+            "description": "Cria uma carteira com saldo 0.00. O titular é opcional. Guarda o id em carteiraId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"titular\": \"Maria Teste\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 e saldo 0.00', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const c = pm.response.json();",
+                  "  pm.expect(c.saldo).to.eql(0);",
+                  "  pm.collectionVariables.set('carteiraId', c.id);",
+                  "});",
+                  "pm.test('Location aponta para a carteira', () => pm.expect(pm.response.headers.get('Location')).to.include('/wallets/' + pm.collectionVariables.get('carteiraId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar carteira",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}"
+              ]
+            },
+            "description": "Devolve a carteira e o saldo atual (sempre com 2 casas decimais)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 com o id certo', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('carteiraId'))); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar carteira inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/999999999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "999999999"
+              ]
+            },
+            "description": "Carteira que não existe: 404 no formato padrão de erro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 com código de erro', () => { pm.response.to.have.status(404); pm.expect(pm.response.json()).to.have.property('codigo'); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Operações (crédito, débito e idempotência)",
+      "description": "Rode em ORDEM (ou use o Runner). Cada operação exige o header Idempotency-Key. A mesma chave repetida com o mesmo conteúdo NÃO altera o saldo de novo.",
+      "item": [
+        {
+          "name": "Crédito de 100.00",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveCredito}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "Aplica um crédito. Gera uma chave nova (chaveCredito) e a guarda para a repetição do próximo passo. Saldo esperado: 100.00.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 100.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('chaveCredito', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201, sem marca de repetição e saldoApos 100', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  const l = pm.response.json();",
+                  "  pm.collectionVariables.set('lancamentoCredito', l.id);",
+                  "  pm.expect(pm.response.headers.has('Idempotent-Replayed')).to.be.false;",
+                  "  pm.expect(l.saldoApos).to.eql(100);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Repetir o MESMO crédito (idempotência)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveCredito}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "Mesma chave e mesmo conteúdo (um retry depois de um timeout): 201 com o MESMO lançamento e o header Idempotent-Replayed: true. O saldo continua 100.00.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 100.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201, marcado como repetição e mesmo lançamento', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(pm.response.headers.get('Idempotent-Replayed')).to.eql('true');",
+                  "  pm.expect(pm.response.json().id).to.eql(Number(pm.collectionVariables.get('lancamentoCredito')));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mesma chave com conteúdo diferente (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveCredito}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "A chave já foi usada com OUTRO conteúdo (aqui, outro valor): 409. Nada é alterado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 999.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Débito de 30.00",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveDebito}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "Débito dentro do saldo. Saldo esperado: 70.00.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"DEBITO\",\n  \"valor\": 30.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('chaveDebito', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 e saldoApos 70', () => { pm.response.to.have.status(201); pm.expect(pm.response.json().saldoApos).to.eql(70); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Débito maior que o saldo (422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveRecusada}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "Tenta debitar 500.00 com saldo 70.00: 422 (saldo insuficiente). Não cria linha no extrato.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"DEBITO\",\n  \"valor\": 500.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('chaveRecusada', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('422', () => pm.response.to.have.status(422));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar saldo (deve ser 70.00)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}"
+              ]
+            },
+            "description": "Conferência: 100 - 30 = 70. A repetição, o conflito e a recusa não mexeram no saldo."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('saldo 70', () => pm.expect(pm.response.json().saldo).to.eql(70));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Validações (400 e 404)",
+      "description": "Entradas inválidas são barradas antes de chegar ao saldo.",
+      "item": [
+        {
+          "name": "Valor negativo (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveInvalida}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "valor deve ser maior que zero.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": -10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mais de 2 casas decimais (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveInvalida}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "O valor aceita no máximo 2 casas.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 10.123\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Tipo inválido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveInvalida}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "O tipo é CREDITO ou DEBITO.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"TRANSFERENCIA\",\n  \"valor\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sem o header Idempotency-Key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "O header é obrigatório.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Carteira inexistente (404)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chaveInvalida}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/999999999/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "999999999",
+                "transactions"
+              ]
+            },
+            "description": "Operação em carteira que não existe.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"CREDITO\",\n  \"valor\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Extrato (paginação e período)",
+      "description": "Do lançamento mais recente para o mais antigo. Só aparecem as operações APLICADAS (repetições e recusas não criam linha).",
+      "item": [
+        {
+          "name": "Extrato completo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ]
+            },
+            "description": "Depois da pasta 2, devem existir 2 lançamentos (débito de 30 e crédito de 100, nessa ordem)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 e o débito (mais recente) aparece', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(JSON.stringify(pm.response.json())).to.include('DEBITO');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extrato paginado (size=1, page=0)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions?page=0&size=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Uma página de 1 item: veja o total de itens e de páginas na resposta."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extrato por período [from, to)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions?from={{periodoDe}}&to={{periodoAte}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "{{periodoDe}}"
+                },
+                {
+                  "key": "to",
+                  "value": "{{periodoAte}}"
+                }
+              ]
+            },
+            "description": "from é inclusivo e to é exclusivo. O pre-request monta uma janela de 1 hora atrás até 1 hora à frente."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const agora = Date.now();",
+                  "pm.collectionVariables.set('periodoDe', new Date(agora - 3600000).toISOString());",
+                  "pm.collectionVariables.set('periodoAte', new Date(agora + 3600000).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Extrato com size inválido (400)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}/transactions?size=500",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "size",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "size precisa estar entre 1 e 100."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Segurança (API key)",
+      "description": "Sem a chave certa, nada passa, e a resposta é igual nos dois casos (não revela se a chave existe).",
+      "item": [
+        {
+          "name": "Sem a chave (401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}"
+              ]
+            },
+            "description": "Sem o header X-API-Key.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Chave errada (401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "chave-errada-de-proposito"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/{{carteiraId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "{{carteiraId}}"
+              ]
+            },
+            "description": "Header X-API-Key com valor incorreto.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Documentação (rotas públicas)",
+      "description": "O contrato OpenAPI é público. O Swagger UI fica em baseUrl/swagger-ui.html.",
+      "item": [
+        {
+          "name": "Contrato OpenAPI (JSON)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v3/api-docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "api-docs"
+              ]
+            },
+            "description": "Gerado do código pelo springdoc.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 e OpenAPI 3.x', () => { pm.response.to.have.status(200); pm.expect(pm.response.json().openapi).to.match(/^3[.]/); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
