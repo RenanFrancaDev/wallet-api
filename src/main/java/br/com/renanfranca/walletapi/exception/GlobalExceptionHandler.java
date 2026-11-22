@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -91,6 +92,16 @@ public class GlobalExceptionHandler {
             MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         return resposta(
                 ErroNegocio.DADOS_INVALIDOS, List.of(ex.getName() + ": valor inválido"), request);
+    }
+
+    /** Header obrigatorio ausente (ex.: Idempotency-Key). */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErroResponse> headerAusente(
+            MissingRequestHeaderException ex, HttpServletRequest request) {
+        return resposta(
+                ErroNegocio.DADOS_INVALIDOS,
+                List.of("header " + ex.getHeaderName() + ": é obrigatório"),
+                request);
     }
 
     /**
