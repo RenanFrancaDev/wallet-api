@@ -10,10 +10,9 @@ Tudo aqui é **automatizado e verificado no CI**: ninguém discute estilo em rev
 | Lint de estilo e bugs comuns | Checkstyle | ESLint / Biome (lint) | `./mvnw checkstyle:check` | sim |
 | Tipos e avisos do compilador | `javac` com `-Xlint:all` e `failOnWarning` | `tsc --noEmit` | `./mvnw test-compile` | sim |
 | Testes unitários | JUnit 5 + Mockito | jest | `./mvnw test` | sim |
+| Cobertura mínima | JaCoCo (piso de 90% das linhas e 80% dos ramos, unitários + integração) | `jest --coverage` com `coverageThreshold` | `./mvnw verify` (relatório em `target/site/jacoco/index.html`) | sim |
 
 Um único comando roda tudo, na ordem do CI: `./mvnw verify`.
-
-> Entra na próxima etapa: JaCoCo (cobertura mínima).
 
 ## O que o CI exige (e o que cada job faz)
 
@@ -21,7 +20,7 @@ O workflow [`ci.yml`](.github/workflows/ci.yml) roda em todo PR e push para `dev
 
 ```
 Qualidade  ->  Testes unitários  ----\
-           ->  Testes de integração  ->  Build  ->  Build e testes (portão final)
+           ->  Testes de integração  ->  Cobertura  ->  Build  ->  Build e testes (portão final)
 ```
 
 | Job | O que roda | Falha quando | Como reproduzir |
@@ -29,8 +28,9 @@ Qualidade  ->  Testes unitários  ----\
 | **Qualidade (formato, lint e tipos)** | `spotless:check`, `checkstyle:check`, `test-compile` | arquivo sem formatar, violação de lint ou aviso do compilador | `./mvnw spotless:check checkstyle:check test-compile` |
 | **Testes unitários** (só roda se a qualidade passar) | `./mvnw test`; resumo na página da execução e relatórios guardados por 7 dias | qualquer teste falha | `./mvnw test` |
 | **Testes de integração (Oracle real)** (só roda se a qualidade passar; em paralelo com os unitários) | `test-compile failsafe:integration-test failsafe:verify`: sobe um Oracle em Docker (Testcontainers) e roda as classes `*IT`; relatórios guardados por 7 dias | qualquer teste `*IT` falha, ou o banco não sobe | `./mvnw test-compile failsafe:integration-test failsafe:verify` (exige Docker) |
+| **Cobertura (piso do JaCoCo)** (depois dos unitários e da integração) | baixa os dados brutos de cobertura dos dois jobs, junta, gera o relatório HTML (guardado por 7 dias) e confere o piso do `pom.xml`: **linhas ≥ 90% e ramos ≥ 80%** | a cobertura cai abaixo do piso | `./mvnw verify` (exige Docker) |
 | **Build** (só roda se os testes passarem) | `./mvnw -DskipTests package` | o jar executável não é gerado | `./mvnw -DskipTests package` |
-| **Build e testes** (portão final) | confere o resultado dos quatro acima | qualquer um não for `success` | `./mvnw verify` (exige Docker) |
+| **Build e testes** (portão final) | confere o resultado dos cinco acima | qualquer um não for `success` | `./mvnw verify` (exige Docker) |
 
 **Por que jobs separados (e não um só):** o mesmo padrão dos pipelines dos projetos Node (lint, typecheck, testes e build como etapas distintas). Quem abre o PR vê em segundos se o problema é de formato, de lint, de teste ou de empacotamento, e a ordem economiza tempo: não se gasta o runner rodando testes em código que nem passa na qualidade.
 
@@ -62,13 +62,15 @@ Qualidade  ->  Testes unitários  ----\
 |---|---|---|
 | `BancoIT` | 10 | migrations dos dois schemas aplicadas (6 e 2) e nenhum objeto inválido; o `WALLET_APP` não tem DML nem leitura das tabelas e não acessa a auditoria (`ORA-00942`, `PLS-00201`); lê as views e executa o package; o dono não escreve direto na trilha; extrato imutável até para o dono (`ORA-20005`); `CHECK` de saldo (`ORA-02290`); a trilha registra saldo anterior, novo, operação e usuário, e uma alteração por SQL direto fica sem operação |
 
-O container é **o mesmo** do `docker-compose.yml` (mesma imagem com tag fixa) e os três usuários são criados pelo **mesmo** script `db/init/01_usuarios.sh`: se a imagem ou o script mudar, o teste acompanha.
-
 | `OperacoesIT` | 6 | a API de ponta a ponta por HTTP real: criar e consultar (saldo `0.00`), crédito, repetição idempotente (mesmo `id` e `Idempotent-Replayed`), conflito `409`, débito, saldo insuficiente `422` (sem criar linha no extrato), extrato paginado e com período, validações `400` com o motivo, `404`, e `401` sem a API key com a saúde pública |
 | `ConcorrenciaIT` | 5 | **concorrência em Java**, por HTTP real, com threads soltas juntas por uma barreira (`CountDownLatch`): 30 débitos simultâneos sobre saldo 100 aplicam exatamente 10; 20 chamadas iguais aplicam uma vez só e as outras 19 devolvem o resultado original; mesma chave com conteúdos diferentes deixa vencer um só; créditos e débitos misturados e várias carteiras ao mesmo tempo mantêm as invariantes. A verdade é conferida **direto no banco** (saldo, soma do extrato, auditoria encadeada) |
 | `OpenApiIT` | 4 | o contrato OpenAPI realmente gerado: público, com a `X-API-Key`, todo `4xx` e `5xx` apontando para o formato padrão de erro, sem o tipo de mídia genérico `*/*` |
 
+O container é **o mesmo** do `docker-compose.yml` (mesma imagem com tag fixa) e os três usuários são criados pelo **mesmo** script `db/init/01_usuarios.sh`: se a imagem ou o script mudar, o teste acompanha.
+
 São **25 testes de integração** no total.
+
+**Cobertura (JaCoCo):** medida sobre os unitários **e** a integração juntos (o piso vale para a soma). Hoje: **97,6% das linhas e 88,1% dos ramos**; o piso fica mais baixo (90% e 80%) para não quebrar por uma variação pequena. A regra é **só subir**: o piso sobe quando a cobertura sobe, nunca desce para acomodar um PR. A cobertura mede o que foi *executado*, não o que foi *verificado*: por isso o "teste do teste" abaixo vale mais do que o número. Não entram na conta a classe `main` (`WalletApiApplication`) nem o SQL (o PL/SQL tem a sua verificação em `db/tests` e no `BancoIT`).
 
 **Teste do teste:** para provar que o `ConcorrenciaIT` detecta o defeito e não só passa, removi temporariamente o `FOR UPDATE` do `PKG_WALLET` e rodei só ele: o resultado está no DECISIONS.md (item 31).
 
