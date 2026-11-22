@@ -1,5 +1,6 @@
 package br.com.renanfranca.walletapi.exception;
 
+import br.com.renanfranca.walletapi.security.ChaveApiInvalidaException;
 import jakarta.servlet.http.HttpServletRequest;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
@@ -41,6 +42,17 @@ public class GlobalExceptionHandler {
      * que zero."
      */
     private static final Pattern MENSAGEM_ORA_NEGOCIO = Pattern.compile("ORA-20\\d{3}:\\s*(.+)");
+
+    /**
+     * API key ausente ou invalida (lancada pelo filtro, antes dos controllers). A mensagem e a
+     * mesma nos dois casos, para nao ajudar quem tenta adivinhar a chave.
+     */
+    @ExceptionHandler(ChaveApiInvalidaException.class)
+    public ResponseEntity<ErroResponse> naoAutorizado(
+            ChaveApiInvalidaException ex, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(corpo("NAO_AUTORIZADO", ex.getMessage(), request, List.of()));
+    }
 
     /** Erro de negocio detectado pela aplicacao. */
     @ExceptionHandler(ErroNegocioException.class)
