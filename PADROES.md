@@ -34,7 +34,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 
 **Por que um job final com nome fixo:** a proteção de branch exige apenas o check `Build e testes`. Como ele só passa se todos os outros passarem, os jobs podem ser renomeados ou ganhar novos colegas sem mexer na regra do GitHub. Sem isso, renomear um job deixaria um check obrigatório que nunca aparece, e nenhum PR poderia ser mergeado.
 
-**Os testes que precisam passar hoje:** os 66 testes unitários (JUnit 5 e Mockito), sem banco e sem Docker:
+**Os testes que precisam passar hoje:** os 92 testes unitários (JUnit 5 e Mockito), sem banco e sem Docker:
 
 | Classe | Testes | O que prova |
 |---|---|---|
@@ -46,6 +46,9 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | `LancamentoControllerTest` | 12 | registrar operação: `201`, repetição com `Idempotent-Replayed`, header ausente, tipo e valor inválidos, e saldo insuficiente (422), chave conflitante (409) e carteira inexistente (404) vindos do banco |
 | `LancamentoServiceTest` | 3 | repasse ao repositório, repetição marcada, erros do banco não engolidos |
 | `LancamentoTest` | 3 | valor e saldo do lançamento sempre com 2 casas |
+| `ExtratoControllerTest` | 7 | extrato: padrões (página 0, tamanho 20), repasse de `page`, `size`, `from` e `to`, data e número inválidos (400), validação com motivo nos detalhes, carteira inexistente (404) |
+| `ExtratoServiceTest` | 13 | validação (`page`, `size`, `from` depois de `to`), carteira inexistente sem consultar o extrato, deslocamento = página x tamanho, extrato vazio |
+| `PaginaTest` | 6 | cálculo do total de páginas |
 
 Entram nas próximas etapas: os testes de integração com Oracle real (Testcontainers) e o teste concorrente em Java; eles passam a fazer parte do job de testes.
 

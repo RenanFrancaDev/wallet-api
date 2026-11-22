@@ -2,7 +2,7 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira e de **registrar operação** (crédito e débito, com idempotência), com tradução padronizada dos erros `ORA-20xxx` para HTTP. Extrato, Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP. Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
@@ -117,6 +117,7 @@ Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, incl
 |---|---|---|---|
 | `POST /wallets` | cria uma carteira com saldo `0.00`. Corpo opcional: `{"titular": "Maria"}` (até 120 caracteres) | `201` + header `Location` + carteira | `400` |
 | `GET /wallets/{id}` | consulta a carteira e o saldo | `200` + carteira | `404`, `400` (id não numérico) |
+| `GET /wallets/{id}/transactions` | extrato da carteira, do mais recente para o mais antigo. Parâmetros opcionais: `from`, `to`, `page`, `size` | `200` + página | `400`, `404` |
 | `POST /wallets/{id}/transactions` | registra um crédito ou débito. Corpo: `{"tipo": "CREDITO" ou "DEBITO", "valor": 100.00}`. **Exige o header `Idempotency-Key`** | `201` + lançamento (inclusive na repetição) | `400`, `404`, `409`, `422`, `503` |
 
 Exemplo:
@@ -145,6 +146,23 @@ curl -X POST http://localhost:8080/wallets/21/transactions \
 - **Débito maior que o saldo:** `422 SALDO_INSUFICIENTE`, sem alterar o saldo.
 - **Sem `Idempotency-Key`, valor `<= 0`, mais de 2 casas decimais ou tipo inválido:** `400 DADOS_INVALIDOS`, com o motivo em `detalhes`.
 - Sob concorrência na mesma carteira, o banco enfileira as operações (lock da carteira): o saldo nunca fica negativo e nada é aplicado em dobro.
+
+**Extrato:**
+
+```bash
+# 2 itens por página, a página 1 (a segunda), só novembro de 2026
+curl 'http://localhost:8080/wallets/21/transactions?page=1&size=2&from=2026-11-01T00:00:00Z&to=2026-12-01T00:00:00Z'
+# 200  {"itens":[{"id":22,...,"saldoApos":70.00,...}], "pagina":1, "tamanho":2, "totalItens":5, "totalPaginas":3}
+```
+
+| Parâmetro | Significado | Padrão |
+|---|---|---|
+| `page` | número da página, a partir de **0** | `0` |
+| `size` | itens por página, de **1 a 100** | `20` |
+| `from` | início do período, **inclusivo**, ISO-8601 com fuso (`2026-11-01T00:00:00Z`) | sem limite |
+| `to` | fim do período, **exclusivo** (intervalo `[from, to)`) | sem limite |
+
+Ordem: do mais recente para o mais antigo (data e id). Só entram os lançamentos **aplicados**: uma repetição idempotente e um débito recusado não criam linha no extrato. Carteira inexistente é `404` (não uma lista vazia); carteira sem operações é `200` com lista vazia. Parâmetros inválidos (`size` fora de 1 a 100, `page` negativo, `from` depois de `to`, data mal formada) são `400` com o motivo em `detalhes`. Atenção: um `+` no fuso (`+03:00`) precisa ir codificado como `%2B` na URL.
 
 **Formato padrão de erro** (toda a API, inclusive rota inexistente e método não permitido):
 
@@ -211,7 +229,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | Job | O que roda |
 |---|---|
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
-| **Testes unitários** | os 66 testes (`./mvnw test`), sem banco e sem Docker |
+| **Testes unitários** | os 92 testes (`./mvnw test`), sem banco e sem Docker |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
 | **Build e testes** | portão final: só passa se os três acima passarem |
 
@@ -227,4 +245,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-Extrato (`GET /wallets/{id}/transactions`, com paginação e filtro por período), API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).
+API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).
