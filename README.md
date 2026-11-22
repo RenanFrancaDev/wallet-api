@@ -241,7 +241,16 @@ Toda escrita passa pelo package. As procedures **não fazem `COMMIT`**: quem cha
 ./mvnw test-compile failsafe:integration-test failsafe:verify   # só os testes de integração (classes *IT)
 ```
 
-A primeira execução baixa a imagem e o Oracle leva cerca de 2 minutos para ficar pronto. **Com pouca memória** (o Docker precisa de uns 4 GB), pare o banco de desenvolvimento antes (`docker compose stop`): dois Oracles ao mesmo tempo não cabem. Hoje cobrem (`BancoIT`): migrations aplicadas e sem objeto inválido, privilégio mínimo do `WALLET_APP`, extrato imutável até para o dono, `CHECK` de saldo e trilha de auditoria.
+A primeira execução baixa a imagem e o Oracle leva cerca de 2 minutos para ficar pronto. **Com pouca memória** (o Docker precisa de uns 4 GB), pare o banco de desenvolvimento antes (`docker compose stop`): dois Oracles ao mesmo tempo não cabem. Hoje são **25 testes**:
+
+| Classe | Testes | O que prova |
+|---|---|---|
+| `BancoIT` | 10 | migrations aplicadas e sem objeto inválido, privilégio mínimo do `WALLET_APP`, extrato imutável até para o dono, `CHECK` de saldo e trilha de auditoria |
+| `OperacoesIT` | 6 | a API de ponta a ponta por HTTP real: criar, creditar, repetir (idempotência), conflito, débito, saldo insuficiente, extrato paginado, validações, `404` e `401` |
+| `ConcorrenciaIT` | 5 | **o coração do desafio**: várias operações na mesma carteira ao mesmo tempo (threads soltas juntas por uma barreira); saldo, extrato e auditoria conferidos **direto no banco** |
+| `OpenApiIT` | 4 | o contrato OpenAPI que a aplicação realmente gera (público, `X-API-Key`, erros apontando para o formato padrão, tipo de mídia `application/json`) |
+
+**O que o `ConcorrenciaIT` garante** (as três garantias do enunciado): (a) o saldo nunca fica negativo, (b) nenhuma operação é aplicada em dobro, (c) o saldo final é a soma consistente do que foi aplicado. Exemplos: 30 débitos simultâneos de 10 sobre saldo 100 aplicam **exatamente 10** e recusam 20; 20 chamadas iguais simultâneas (mesma chave) aplicam **uma vez só** e as outras 19 recebem o resultado original; créditos e débitos misturados em várias carteiras ao mesmo tempo mantêm as invariantes. Em todos, o teste confere direto no banco que o saldo é igual à soma do extrato e ao saldo do último lançamento, e que a trilha de auditoria tem uma linha por mudança de saldo, encadeada sem buraco.
 
 **Camada de banco**, com o banco no ar e as migrations aplicadas (basta ter subido a aplicação uma vez):
 

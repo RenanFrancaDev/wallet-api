@@ -64,7 +64,13 @@ Qualidade  ->  Testes unitários  ----\
 
 O container é **o mesmo** do `docker-compose.yml` (mesma imagem com tag fixa) e os três usuários são criados pelo **mesmo** script `db/init/01_usuarios.sh`: se a imagem ou o script mudar, o teste acompanha.
 
-Entra na próxima etapa: o teste **concorrente** em Java (threads com barreira) e os testes de ponta a ponta pela API.
+| `OperacoesIT` | 6 | a API de ponta a ponta por HTTP real: criar e consultar (saldo `0.00`), crédito, repetição idempotente (mesmo `id` e `Idempotent-Replayed`), conflito `409`, débito, saldo insuficiente `422` (sem criar linha no extrato), extrato paginado e com período, validações `400` com o motivo, `404`, e `401` sem a API key com a saúde pública |
+| `ConcorrenciaIT` | 5 | **concorrência em Java**, por HTTP real, com threads soltas juntas por uma barreira (`CountDownLatch`): 30 débitos simultâneos sobre saldo 100 aplicam exatamente 10; 20 chamadas iguais aplicam uma vez só e as outras 19 devolvem o resultado original; mesma chave com conteúdos diferentes deixa vencer um só; créditos e débitos misturados e várias carteiras ao mesmo tempo mantêm as invariantes. A verdade é conferida **direto no banco** (saldo, soma do extrato, auditoria encadeada) |
+| `OpenApiIT` | 4 | o contrato OpenAPI realmente gerado: público, com a `X-API-Key`, todo `4xx` e `5xx` apontando para o formato padrão de erro, sem o tipo de mídia genérico `*/*` |
+
+São **25 testes de integração** no total.
+
+**Teste do teste:** para provar que o `ConcorrenciaIT` detecta o defeito e não só passa, removi temporariamente o `FOR UPDATE` do `PKG_WALLET` e rodei só ele: o resultado está no DECISIONS.md (item 31).
 
 ## Hooks locais (opcional, recomendado)
 
