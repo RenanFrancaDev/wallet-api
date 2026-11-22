@@ -306,6 +306,21 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 - Exige Docker e memória (uns 4 GB): em máquina modesta é preciso parar o banco de desenvolvimento antes.
 - Um único banco compartilhado por todas as classes `*IT`: elas não podem rodar em paralelo entre si.
 
+## 31. Testes de integração pela API e de concorrência em Java, com "teste do teste"
+
+**Contexto.** O item 30 provou o banco por SQL. Faltava provar a API de ponta a ponta (HTTP real, filtro de API key, JSON, erros) e, principalmente, que a garantia de concorrência se mantém quando quem chama são várias threads Java pela API, não só sessões `sqlplus`.
+
+**Decisão.**
+- `OperacoesIT` (6) e `OpenApiIT` (4) usam o servidor de verdade (`RANDOM_PORT`) e um cliente HTTP do próprio JDK (`ClienteHttp`), sem mocks.
+- `ConcorrenciaIT` (5) dispara as chamadas todas ao mesmo tempo (duas travas `CountDownLatch`: todas as threads ficam prontas e só então largam juntas). Os cenários: 30 débitos de 10 sobre saldo 100 (exatamente 10 `201` e 20 `422`, saldo 0); 20 chamadas idênticas com a mesma chave (um só lançamento, 19 repetições); mesma chave com conteúdos diferentes (um vence, o resto `409`); créditos e débitos misturados; 5 carteiras em paralelo sem interferência.
+- O resultado nunca é conferido só pelo que a API responde: `ConferenciaDoBanco` consulta o banco por JDBC (saldo, soma do extrato, saldo do último lançamento e cadeia da auditoria sem quebras).
+
+**Teste do teste (mutação).** Um teste de concorrência que passa não prova nada se ele também passaria com o código errado. Removi temporariamente o `FOR UPDATE WAIT 5` da `PKG_WALLET` e rodei só o `ConcorrenciaIT`: **5 de 5 testes falharam** (17:16 a 17:19, 116 s). Restaurei o arquivo e conferi que ficou idêntico ao do git. Ou seja, o teste detecta justamente o defeito que o lock existe para impedir.
+
+**Achado pelo `OpenApiIT`.** Sem `produces`, o springdoc documentava as respostas como `*/*` (qualquer tipo). Os controllers passaram a declarar `produces = application/json`, e há um teste que impede a volta do `*/*`.
+
+**Limitações.** Tudo roda em uma única instância da aplicação, com pool de 10 conexões do Hikari; o lock é do banco, então várias instâncias seriam protegidas igualmente, mas isso não foi exercitado. Testes de concorrência têm um componente de temporização: a barreira aumenta muito a chance de colisão, mas não a garante.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
