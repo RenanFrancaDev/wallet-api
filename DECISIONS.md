@@ -207,6 +207,22 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Não incluído ainda:** gate de cobertura (JaCoCo, com limite que só sobe, como nos projetos de referência) e os testes de integração com Testcontainers; eles entram nos jobs existentes.
 
+## 26. Registrar operação: chave no header e `201` também na repetição
+
+**Chave no header `Idempotency-Key`** (o padrão de mercado), obrigatório: ela identifica a *tentativa*, não faz parte do conteúdo da operação, e o mesmo corpo pode ser reenviado com a mesma chave. Sem o header, `400`.
+
+**Repetição devolve `201` com o mesmo corpo**, marcada com o header `Idempotent-Replayed: true`. O enunciado diz que a segunda chamada "retorna o mesmo resultado da primeira", então devolvo o mesmo status e o mesmo corpo; quem precisar distinguir lê o header. A alternativa era responder `200` nas repetições, o que é comum, mas faria o retry de um cliente que só confere o status `201` parecer uma falha.
+
+**Mesma chave com conteúdo diferente** é `409` (`CHAVE_IDEMPOTENCIA_CONFLITO`), decidido dentro do banco.
+
+**Validação em duas camadas, com uma fonte da verdade para a chave:** o Bean Validation barra tipo ausente, valor `<= 0` e mais de 13 dígitos inteiros ou 2 decimais antes de ir ao banco. A chave vazia ou com mais de 100 caracteres é validada **só pelo banco**, que devolve `DADOS_INVALIDOS` com o motivo; duplicar a regra no Java criaria dois lugares para manter.
+
+**Valor como `BigDecimal`**, nunca `double`, e mais de 2 casas é rejeitado em vez de arredondado em silêncio.
+
+**A transação é do serviço**, e o lock da carteira dura até o `COMMIT` feito pelo Spring. Isso foi comprovado pela API com concorrência real (resultados no PDF e no PR): 10 débitos simultâneos de 10 sobre saldo 50 resultaram em 5 aplicados e 5 recusados; 10 chamadas iguais simultâneas aplicaram uma vez só.
+
+**O lançamento devolvido é lido da view** `V_EXTRATO` depois da chamada ao package, em vez de usar o `OUT` de data e hora, para o fuso horário vir correto e a repetição devolver exatamente o lançamento original.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.

@@ -2,7 +2,7 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira, com tradução padronizada dos erros `ORA-20xxx` para HTTP. Registrar operação, extrato, Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira e de **registrar operação** (crédito e débito, com idempotência), com tradução padronizada dos erros `ORA-20xxx` para HTTP. Extrato, Swagger, API key e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
@@ -117,6 +117,7 @@ Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, incl
 |---|---|---|---|
 | `POST /wallets` | cria uma carteira com saldo `0.00`. Corpo opcional: `{"titular": "Maria"}` (até 120 caracteres) | `201` + header `Location` + carteira | `400` |
 | `GET /wallets/{id}` | consulta a carteira e o saldo | `200` + carteira | `404`, `400` (id não numérico) |
+| `POST /wallets/{id}/transactions` | registra um crédito ou débito. Corpo: `{"tipo": "CREDITO" ou "DEBITO", "valor": 100.00}`. **Exige o header `Idempotency-Key`** | `201` + lançamento (inclusive na repetição) | `400`, `404`, `409`, `422`, `503` |
 
 Exemplo:
 
@@ -128,6 +129,22 @@ curl http://localhost:8080/wallets/21
 curl http://localhost:8080/wallets/999999
 # 404  {"codigo":"CARTEIRA_NAO_ENCONTRADA","mensagem":"Carteira não encontrada.","timestamp":"...","path":"/wallets/999999","detalhes":[]}
 ```
+
+**Registrar operação e idempotência:**
+
+```bash
+# crédito de 100.00
+curl -X POST http://localhost:8080/wallets/21/transactions \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: pedido-123' \
+  -d '{"tipo":"CREDITO","valor":100.00}'
+# 201  {"id":21,"carteiraId":21,"tipo":"CREDITO","valor":100.00,"saldoApos":100.00,"chaveIdempotencia":"pedido-123",...}
+```
+
+- **Mesma chave e mesmo conteúdo** (retry, timeout): o saldo é afetado **uma única vez** e a resposta é a da primeira chamada (`201`, mesmo corpo), marcada com o header `Idempotent-Replayed: true`.
+- **Mesma chave com conteúdo diferente:** `409 CHAVE_IDEMPOTENCIA_CONFLITO`.
+- **Débito maior que o saldo:** `422 SALDO_INSUFICIENTE`, sem alterar o saldo.
+- **Sem `Idempotency-Key`, valor `<= 0`, mais de 2 casas decimais ou tipo inválido:** `400 DADOS_INVALIDOS`, com o motivo em `detalhes`.
+- Sob concorrência na mesma carteira, o banco enfileira as operações (lock da carteira): o saldo nunca fica negativo e nada é aplicado em dobro.
 
 **Formato padrão de erro** (toda a API, inclusive rota inexistente e método não permitido):
 
@@ -194,7 +211,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | Job | O que roda |
 |---|---|
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
-| **Testes unitários** | os 48 testes (`./mvnw test`), sem banco e sem Docker |
+| **Testes unitários** | os 66 testes (`./mvnw test`), sem banco e sem Docker |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
 | **Build e testes** | portão final: só passa se os três acima passarem |
 
@@ -210,4 +227,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-Registrar operação e extrato (com paginação e filtro por período), API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).
+Extrato (`GET /wallets/{id}/transactions`, com paginação e filtro por período), API key, OpenAPI/Swagger e testes de integração com Testcontainers (incluindo concorrência).
