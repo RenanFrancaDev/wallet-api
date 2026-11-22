@@ -46,7 +46,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ErroNegocioException.class)
     public ResponseEntity<ErroResponse> negocio(
             ErroNegocioException ex, HttpServletRequest request) {
-        return resposta(ex.getErro(), List.of(), request);
+        return resposta(ex.getErro(), ex.getDetalhes(), request);
     }
 
     /** Erro vindo do banco: ORA-20001..20006 viram erros de negocio; o resto e erro interno. */
