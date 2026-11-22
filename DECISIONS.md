@@ -223,6 +223,26 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **O lançamento devolvido é lido da view** `V_EXTRATO` depois da chamada ao package, em vez de usar o `OUT` de data e hora, para o fuso horário vir correto e a repetição devolver exatamente o lançamento original.
 
+## 27. Extrato: paginação por deslocamento, ordem fixa e período semiaberto
+
+**Paginação por `page` e `size` (deslocamento)**, com `totalItens` e `totalPaginas` na resposta. É o mais simples de usar e de entender, e atende ao "lista, com paginação" do enunciado. O banco recebe `OFFSET :deslocamento ROWS FETCH NEXT :tamanho ROWS ONLY`, com o deslocamento calculado como `página x tamanho`.
+
+**Limite honesto:** o deslocamento fica mais lento quanto maior a página (o banco percorre e descarta as linhas anteriores) e pode repetir ou pular itens se entrarem lançamentos novos entre duas consultas. Para extratos enormes, a alternativa é a **paginação por cursor** (`WHERE (data, id) < (:ultimaData, :ultimoId)`), que o índice `IX_LANCAMENTO_EXTRATO (carteira, data, id)` já suportaria. Fica como o que eu faria com mais tempo.
+
+**Ordem fixa, do mais recente para o mais antigo** (data e depois id, o desempate para lançamentos no mesmo instante), usando esse índice. Sem ordem explícita a paginação seria instável.
+
+**Período `[from, to)`:** `from` inclusivo e `to` exclusivo. Intervalos semiabertos encadeiam sem sobrepor nem deixar buraco (o `to` de um é o `from` do próximo). Ambos são `OffsetDateTime` ISO-8601 com fuso, sem ambiguidade, e qualquer um pode faltar. Um `+` no fuso precisa ir como `%2B` na URL (limitação do formato de query string, documentada).
+
+**Limites:** `size` de 1 a 100 (padrão 20), para um cliente não pedir a tabela inteira. `page`, `size` e período são validados no serviço, que devolve todos os problemas de uma vez em `detalhes`, em vez de parar no primeiro.
+
+**Carteira inexistente é `404`**, não lista vazia, que esconderia o erro do cliente. Carteira existente sem operações é `200` com lista vazia.
+
+**O extrato só mostra o que foi aplicado.** Uma repetição idempotente não cria linha e um débito recusado não grava nada; verificado contra o Oracle.
+
+**`ExtratoService` e `ExtratoController` separados** de `LancamentoService` e `LancamentoController`: leitura e escrita têm necessidades diferentes (o extrato é `@Transactional(readOnly = true)`), e assim o registro de operação não foi alterado.
+
+**O `WHERE` é montado só com os filtros informados**, em vez do padrão `(:from IS NULL OR data >= :from)`: ligar um `null` a um parâmetro de data costuma exigir o tipo SQL explícito com o driver da Oracle, e montar o texto só com o que foi informado evita esse problema (não testei a alternativa; escolhi o caminho que dispensa o risco).
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
