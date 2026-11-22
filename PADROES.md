@@ -34,7 +34,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 
 **Por que um job final com nome fixo:** a proteção de branch exige apenas o check `Build e testes`. Como ele só passa se todos os outros passarem, os jobs podem ser renomeados ou ganhar novos colegas sem mexer na regra do GitHub. Sem isso, renomear um job deixaria um check obrigatório que nunca aparece, e nenhum PR poderia ser mergeado.
 
-**Os testes que precisam passar hoje:** os 108 testes unitários (JUnit 5 e Mockito), sem banco e sem Docker:
+**Os testes que precisam passar hoje:** os 122 testes unitários (JUnit 5 e Mockito), sem banco e sem Docker:
 
 | Classe | Testes | O que prova |
 |---|---|---|
@@ -49,8 +49,10 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | `ExtratoControllerTest` | 7 | extrato: padrões (página 0, tamanho 20), repasse de `page`, `size`, `from` e `to`, data e número inválidos (400), validação com motivo nos detalhes, carteira inexistente (404) |
 | `ExtratoServiceTest` | 13 | validação (`page`, `size`, `from` depois de `to`), carteira inexistente sem consultar o extrato, deslocamento = página x tamanho, extrato vazio |
 | `PaginaTest` | 6 | cálculo do total de páginas |
-| `ApiKeyFilterTest` | 10 | API key: chave certa passa; sem header, errada, vazia ou quase certa dão `401` no formato padrão e sem chegar ao serviço; mensagem igual nos dois casos; escrita e rota inexistente também barradas; só a saúde é pública (e `/actuator/healthz` não) |
+| `ApiKeyFilterTest` | 12 | API key (inclui que a documentação OpenAPI e o Swagger UI são públicos e caminhos parecidos não): chave certa passa; sem header, errada, vazia ou quase certa dão `401` no formato padrão e sem chegar ao serviço; mensagem igual nos dois casos; escrita e rota inexistente também barradas; só a saúde é pública (e `/actuator/healthz` não) |
 | `ApiKeyConfigTest` | 6 | falha fechada: chave nula, vazia ou com menos de 16 caracteres impede a inicialização |
+| `OpenApiConfigTest` | 4 | o contrato declara a API key no header `X-API-Key` e a exige em todas as operações |
+| `RespostasDeErroCustomizerTest` | 8 | todo `4xx`/`5xx` aponta para o formato padrão de erro (inclusive quando o springdoc anexa o corpo de sucesso por engano), `401` em toda operação, respostas de sucesso intocadas |
 
 Entram nas próximas etapas: os testes de integração com Oracle real (Testcontainers) e o teste concorrente em Java; eles passam a fazer parte do job de testes.
 

@@ -261,6 +261,25 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações e o que eu faria com mais tempo:** uma única chave compartilhada (sem identificar o cliente), trocada por reinício; a API fala HTTP puro, então em produção a chave só é segura atrás de TLS (HTTPS terminado em um proxy ou balanceador). Com mais tempo: várias chaves por cliente guardadas com hash, rotação sem parar o serviço, limite de taxa por chave e auditoria de qual chave fez cada operação.
 
+## 29. Documentação OpenAPI gerada a partir do código (springdoc)
+
+**Decisão:** springdoc-openapi 3.2.1 gera o contrato (OpenAPI 3.1) em `/v3/api-docs` e serve o Swagger UI em `/swagger-ui.html`. O enunciado aceita documentação "gerada ou versionada"; escolhi **gerada**, porque um contrato escrito à mão (ou uma cópia commitada) fica desatualizado assim que uma rota muda. Verificado que essa versão funciona com o Spring Boot 4.2.0 (a biblioteca não é gerenciada pelo Boot, então a versão fica fixada no `pom.xml`).
+
+**Por que o springdoc:** é a biblioteca mais usada para isso no Spring. Equivale ao `@nestjs/swagger`.
+
+**A API key aparece no contrato** como esquema `apiKey` no header `X-API-Key`, com exigência global; o botão **Authorize** do Swagger UI passa a mandar o header em todas as chamadas, então dá para testar as rotas protegidas pelo navegador.
+
+**A documentação é pública, as rotas não:** `/v3/api-docs` e `/swagger-ui` entram na lista de caminhos sem chave, ao lado da saúde (só o caminho exato e o que vem abaixo dele; `/swagger-uix` continua `401`, testado). O contrato não expõe dado nenhum, e o avaliador precisa conseguir lê-lo sem credencial. Em produção eu poderia desligar o Swagger UI por perfil.
+
+**Um bug que a verificação real pegou:** o springdoc anexa o tipo de retorno do método a **toda** resposta anotada, inclusive às de erro, e documentava um `404` devolvendo uma `CarteiraResponse` e um `422` devolvendo um `LancamentoResponse`. Corrigi com um `OpenApiCustomizer` (`RespostasDeErroCustomizer`) que faz duas coisas para todas as operações: acrescenta o `401` (o filtro vale para todas as rotas) e faz todo `4xx` e `5xx` apontar para o formato padrão de erro (`ErroResponse`). Em vez de repetir uma anotação de erro em cada rota, a regra fica em um lugar só, e tem teste, incluindo o caso do corpo anexado por engano.
+
+**Anotações nos controllers e DTOs** (`@Operation`, `@ApiResponse`, `@Parameter`, `@Schema`): resumo e regras de idempotência de cada rota, todos os códigos de resposta, o header `Idempotent-Replayed`, e exemplos e descrições dos campos.
+
+**Limitações:**
+- Os exemplos numéricos do OpenAPI são números JSON, então `70.00` aparece como `70.0` no Swagger; a API real devolve `70.00`.
+- Não há teste que suba o springdoc inteiro (isso exigiria o contexto completo, com banco). Os testes cobrem a configuração e o *customizer* como unidades; o contrato gerado foi verificado contra a aplicação real. Com o Testcontainers, um teste de integração poderia baixar `/v3/api-docs` e conferir as rotas.
+- Não commitei uma cópia do `openapi.json`: ela envelheceria sem um teste que detecte divergência.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
