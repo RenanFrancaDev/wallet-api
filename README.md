@@ -86,25 +86,50 @@ db/                                scripts de init do container e testes de banc
 
 **Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
 
+## Subir o ambiente: duas maneiras
+
+Pré-requisito comum: o Docker Desktop **aberto**, e o arquivo `.env` criado na raiz (`cp .env.example .env` no Git Bash, ou `Copy-Item .env.example .env` no PowerShell; troque os valores, a `WALLET_API_KEY` precisa de 16+ caracteres).
+
+### Maneira 1: pelo script (recomendada)
+
+O script faz sozinho tudo o que a maneira 2 faz à mão: confere o `.env`, o Docker e a porta, liga o banco, **espera ele ficar `healthy`** e sobe a API. Há duas formas de chamá-lo:
+
+- **Com 2 cliques:** no Explorador de Arquivos, abra a pasta `scripts` e dê **duplo clique em `start.cmd`**. Abre uma janela preta com o andamento; ela fica aberta enquanto a API roda (feche a janela, ou pressione Ctrl+C, para encerrar). Para encerrar sem fechar a janela, dê duplo clique em `stop.cmd`.
+- **Pelo terminal** (PowerShell, na raiz do projeto): `.\scripts\start.ps1`. Se o Windows bloquear o script: `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`.
+
+Na **primeira vez** o banco leva uns 2 minutos para ficar pronto (a janela mostra `Esperando o Oracle ficar healthy`). Quando aparecer `Started WalletApiApplication`, a API está no ar: abra <http://localhost:8080/swagger-ui.html> ou rode `curl http://localhost:8080/actuator/health` (deve responder `{"status":"UP"}`).
+
+### Maneira 2: manual, passo a passo
+
+Útil para entender o que o script faz, ou fora do Windows. Na raiz do projeto:
+
+1. **Ligar o banco:** `docker compose up -d`
+2. **Esperar ficar pronto:** `docker compose ps` até a coluna de status mostrar `healthy` (ou `docker compose logs -f` até aparecer `DATABASE IS READY TO USE!`; Ctrl+C sai dos logs).
+3. **Ligar a API:** `./mvnw spring-boot:run` (no PowerShell: `.\mvnw.cmd spring-boot:run`). Na primeira subida o Flyway cria os schemas, tabelas e o package.
+4. **Conferir:** `curl http://localhost:8080/actuator/health` deve responder `{"status":"UP"}`.
+5. **Encerrar:** Ctrl+C na janela da API. Para desligar o banco: `docker compose stop` (os dados ficam no container parado).
+
 ## Comandos do dia a dia (scripts)
 
-Em [`scripts/`](scripts/) ficam atalhos em **PowerShell**, o equivalente aos `npm run dev`, `npm test` etc. (Windows PowerShell 5.1 ou superior, o que já vem no Windows):
+Em [`scripts/`](scripts/) ficam os atalhos em **PowerShell**, o equivalente aos `npm run dev`, `npm test` etc. (Windows PowerShell 5.1 ou superior, o que já vem no Windows). `start` e `stop` também têm um lançador de **duplo clique** (`.cmd`):
 
-| Para quê | Comando |
-|---|---|
-| **Subir tudo para desenvolver**: confere o `.env`, liga o banco, espera ele ficar `healthy` e roda a aplicação | `.\scripts\start.ps1` |
-| **Encerrar** a aplicação (só se a porta 8080 for mesmo dela); com `-Banco`, desliga o banco também | `.\scripts\stop.ps1 [-Banco]` |
-| **Testes unitários** (rápidos, sem Docker) | `.\scripts\test.ps1` |
-| **Tudo o que o CI roda** (formato, lint, unitários, integração e cobertura): para o banco de desenvolvimento antes e o religa no fim | `.\scripts\verify.ps1` |
-| **Rodar a coleção do Postman** no terminal (com a aplicação no ar) | `.\scripts\postman.ps1` |
+| Para quê | Terminal (PowerShell) | 2 cliques |
+|---|---|---|
+| **Subir tudo para desenvolver**: confere o `.env`, liga o banco, espera ele ficar `healthy` e roda a aplicação | `.\scripts\start.ps1` | `scripts\start.cmd` |
+| **Encerrar** a aplicação (só se a porta 8080 for mesmo dela); com `-Banco`, desliga o banco também | `.\scripts\stop.ps1 [-Banco]` | `scripts\stop.cmd` |
+| **Testes unitários** (rápidos, sem Docker) | `.\scripts\test.ps1` | |
+| **Tudo o que o CI roda** (formato, lint, unitários, integração e cobertura): para o banco de desenvolvimento antes e o religa no fim | `.\scripts\verify.ps1` | |
+| **Rodar a coleção do Postman** no terminal (com a aplicação no ar) | `.\scripts\postman.ps1` | |
 
-Se o Windows bloquear a execução dos `.ps1`: `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`. Fora do Windows (ou do Git Bash), use os comandos do Maven mostrados abaixo: os scripts consultam processos e portas do Windows.
+Por que `.cmd` e não clicar no `.ps1`: no Windows, o duplo clique num `.ps1` abre o arquivo no editor em vez de executá-lo. O `.cmd` chama o PowerShell já liberando a execução, só para aquele script.
+
+Fora do Windows, use a maneira 2 (os scripts consultam processos e portas do Windows).
 
 O `start` confere antes de subir: `.env` existe, `WALLET_API_KEY` tem 16+ caracteres (o valor nunca é impresso), Docker responde e a porta 8080 está livre. Ele usa `docker compose up -d --no-recreate`: o banco **não tem volume nomeado**, então os dados vivem dentro do container, e recriá-lo (o compose faz isso se só mudar a grafia do caminho, como `c:\` e `C:\`) apagaria as carteiras. Parar (`stop -Banco`) mantém os dados; `docker compose down` os apaga.
 
 ## Rodar a aplicação
 
-Sem os scripts (ou fora do Windows), à mão:
+Variações para rodar a aplicação:
 
 Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas e a `WALLET_API_KEY` dele; **sem uma `WALLET_API_KEY` de 16+ caracteres a aplicação não sobe**):
 

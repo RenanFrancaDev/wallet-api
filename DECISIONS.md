@@ -353,6 +353,8 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Decisão.** Cinco atalhos em `scripts/`: `start`, `stop`, `test`, `verify` e `postman`, todos em PowerShell (`.ps1`). Cheguei a escrever e testar também a versão em Bash, mas removi: manter duas cópias do mesmo comportamento dobra a manutenção, e o ambiente do projeto é Windows. Preferi scripts a um Makefile porque não há `make` no Windows e eles não exigem instalar nada.
 
+**Duplo clique.** No Windows, clicar duas vezes num `.ps1` abre o arquivo no editor em vez de executá-lo. Por isso `start.cmd` e `stop.cmd` são lançadores de duas linhas que chamam o PowerShell com `-ExecutionPolicy Bypass` só para aquele script (e `pause` para a janela não fechar antes de se ler um erro). O README documenta as duas maneiras (script, por duplo clique ou terminal, e passo a passo manual).
+
 **Cuidados embutidos.** O `start` confere `.env`, tamanho da `WALLET_API_KEY` (sem imprimi-la), Docker e porta livre, e espera o banco ficar `healthy`. O `stop` só encerra o processo da porta 8080 se a linha de comando for a da nossa aplicação. O `verify` para o banco de desenvolvimento (o Docker não comporta dois Oracles) e o religa no fim mesmo se o build falhar (`try/finally`).
 
 **Achado durante o teste dos scripts.** O banco **não tem volume nomeado**: os dados vivem na camada do container. O `docker compose up -d` recriou o container quando mudei de Git Bash (`c:\dev\...`) para PowerShell (`C:\dev\...`), porque a grafia do caminho entrou no cálculo de mudança de configuração. Recriar apaga as carteiras. Os scripts passam a usar `up -d --no-recreate`. Deixei o `docker-compose.yml` como está (mudar a infraestrutura é decisão à parte); um volume nomeado resolveria de vez.
