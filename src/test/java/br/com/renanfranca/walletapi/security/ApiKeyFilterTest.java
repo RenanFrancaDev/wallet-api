@@ -141,4 +141,28 @@ class ApiKeyFilterTest {
         mvc.perform(get("/wallets/actuator/health")).andExpect(status().isUnauthorized());
         verify(service, never()).buscar(anyLong());
     }
+
+    @Test
+    void documentacaoDaApiNaoExigeChave() throws Exception {
+        // A fatia web não tem o springdoc (por isso 404), mas o que importa é NÃO ser 401: o filtro
+        // deixou passar.
+        for (String caminho :
+                new String[] {
+                    "/v3/api-docs",
+                    "/v3/api-docs/swagger-config",
+                    "/swagger-ui.html",
+                    "/swagger-ui/index.html"
+                }) {
+            mvc.perform(get(caminho))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.codigo").value(not(containsString("NAO_AUTORIZADO"))));
+        }
+    }
+
+    @Test
+    void caminhoParecidoComADocumentacaoNaoEPublico() throws Exception {
+        mvc.perform(get("/swagger-uix")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/v3/api-docsx")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/wallets/v3/api-docs")).andExpect(status().isUnauthorized());
+    }
 }

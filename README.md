@@ -2,7 +2,7 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP e autenticação por **API key** (`X-API-Key`). Swagger e os testes de integração estão em construção e entram nas próximas etapas. Este README é atualizado a cada etapa.
+> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira, de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP, autenticação por **API key** (`X-API-Key`) e a documentação **OpenAPI/Swagger** gerada a partir do código. Os testes de integração com Testcontainers estão em construção e entram na próxima etapa. Este README é atualizado a cada etapa.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
@@ -111,6 +111,19 @@ curl http://localhost:8080/actuator/health    # {"status":"UP"}  (a única rota 
 
 Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, inclusive por SQL direto) e toda mudança de saldo grava a trilha na mesma transação.
 
+## Documentação interativa (OpenAPI e Swagger UI)
+
+Com a aplicação no ar:
+
+| O que | Endereço |
+|---|---|
+| **Swagger UI**: ler a API e testar as rotas no navegador | <http://localhost:8080/swagger-ui.html> |
+| **Contrato OpenAPI 3.1** em JSON (para gerar clientes, importar no Postman etc.) | <http://localhost:8080/v3/api-docs> |
+
+A documentação é **pública** (o contrato não expõe dado nenhum); **as rotas continuam exigindo `X-API-Key`**. Para chamá-las pelo Swagger UI, clique em **Authorize**, cole o valor da `WALLET_API_KEY` e confirme: a partir daí o Swagger UI manda o header em todas as chamadas.
+
+O contrato é **gerado a partir do código** (springdoc-openapi 3.2.1), então não fica desatualizado em relação às rotas: cada operação traz resumo, parâmetros, regras de idempotência, exemplos e **todos os códigos de resposta**, e as respostas de erro (`400`, `401`, `404`, `409`, `422`, `503`) apontam para o mesmo formato padrão de erro. Para guardar uma cópia: `curl http://localhost:8080/v3/api-docs > openapi.json`.
+
 ## API
 
 ### Autenticação (API key)
@@ -128,7 +141,7 @@ Sem o header, ou com a chave errada ou vazia: `401` com o formato padrão de err
 {"codigo":"NAO_AUTORIZADO","mensagem":"API key ausente ou inválida.","timestamp":"...","path":"/wallets/21","detalhes":[]}
 ```
 
-Uma rota inexistente sem chave também devolve `401`, para não revelar quais rotas existem. A chave é comparada em tempo constante e nunca é escrita em log. Os exemplos abaixo já incluem o header (defina `WALLET_API_KEY` no seu shell, como acima).
+A saúde (`/actuator/health`) e a documentação (`/v3/api-docs` e `/swagger-ui`) são as únicas rotas públicas. Uma rota inexistente sem chave também devolve `401`, para não revelar quais rotas existem. A chave é comparada em tempo constante e nunca é escrita em log. Os exemplos abaixo já incluem o header (defina `WALLET_API_KEY` no seu shell, como acima).
 
 ### Rotas
 
@@ -248,7 +261,7 @@ Qualidade  ->  Testes unitários  ->  Build  ->  Build e testes (portão final)
 | Job | O que roda |
 |---|---|
 | **Qualidade** | formatação (`spotless:check`), lint (`checkstyle:check`) e compilação estrita (`test-compile`: `-Xlint:all` com `failOnWarning`; em Java o typecheck é o compilador) |
-| **Testes unitários** | os 108 testes (`./mvnw test`), sem banco e sem Docker |
+| **Testes unitários** | os 122 testes (`./mvnw test`), sem banco e sem Docker |
 | **Build** | gera o jar executável (`./mvnw -DskipTests package`) |
 | **Build e testes** | portão final: só passa se os três acima passarem |
 
@@ -264,4 +277,4 @@ Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELET
 
 ## Próximas etapas
 
-OpenAPI/Swagger (documentando também o header `X-API-Key`) e testes de integração com Testcontainers (incluindo concorrência).
+Testes de integração com Testcontainers (incluindo o teste concorrente em Java), cobertura mínima (JaCoCo) e a revisão final dos documentos.
