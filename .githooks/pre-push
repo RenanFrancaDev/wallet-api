@@ -1,0 +1,11 @@
+#!/bin/sh
+# Roda localmente, antes de enviar (git push), o mesmo que o CI exige: formato, lint, tipos e testes.
+# Equivale ao hook pre-push do Husky nos projetos Node.
+#
+# Ativar UMA vez por clone:  git config core.hooksPath .githooks
+# Pular em emergencia:       git push --no-verify   (o CI continua bloqueando o merge)
+set -e
+
+echo "[pre-push] formato (spotless), lint (checkstyle) e testes unitarios"
+./mvnw -B -ntp -q spotless:check checkstyle:check test
+echo "[pre-push] ok"

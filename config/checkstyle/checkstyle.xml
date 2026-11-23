@@ -1,0 +1,104 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Regras de LINT (o papel do "biome lint" / ESLint). Conjunto enxuto e escolhido regra a regra.
+
+  O que NAO esta aqui, de proposito: regras de FORMATO (indentacao, chaves, espacos, ordem de imports).
+  Isso e trabalho do Spotless/google-java-format; duplicar aqui geraria conflito entre as duas ferramentas.
+  Cada regra abaixo tem o motivo no comentario. Ver PADROES.md.
+-->
+<module name="Checker">
+  <property name="charset" value="UTF-8"/>
+  <property name="severity" value="error"/>
+  <property name="fileExtensions" value="java"/>
+
+  <!-- Tabulacao no codigo-fonte: o formatador usa espacos; tab misturado quebra o alinhamento. -->
+  <module name="FileTabCharacter">
+    <property name="eachLine" value="true"/>
+  </module>
+
+  <!-- Todo arquivo termina com quebra de linha LF (mesmo padrao do .gitattributes). -->
+  <module name="NewlineAtEndOfFile">
+    <property name="lineSeparator" value="lf"/>
+  </module>
+
+  <!--
+    120 colunas: teto de seguranca. O formatador quebra em 100, mas nao consegue quebrar strings longas,
+    URLs e alguns comentarios; esta regra pega o que ele nao alcanca.
+  -->
+  <module name="LineLength">
+    <property name="max" value="120"/>
+    <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+  </module>
+
+  <module name="TreeWalker">
+    <!-- ===== Imports ===== -->
+    <!-- Import com * esconde de onde vem cada classe e pode gerar conflito de nomes. -->
+    <module name="AvoidStarImport"/>
+    <module name="UnusedImports"/>
+    <module name="RedundantImport"/>
+    <!-- Classes internas do JDK (sun.*) quebram entre versoes do Java. -->
+    <module name="IllegalImport"/>
+
+    <!-- ===== Nomes (convencoes do Java) ===== -->
+    <module name="PackageName"/>
+    <module name="TypeName"/>
+    <module name="MethodName"/>
+    <module name="MemberName"/>
+    <module name="ParameterName"/>
+    <module name="LocalVariableName"/>
+    <module name="StaticVariableName"/>
+    <module name="ConstantName"/>
+
+    <!-- ===== Bugs comuns ===== -->
+    <!-- Sobrescrever equals sem hashCode quebra HashMap e HashSet. -->
+    <module name="EqualsHashCode"/>
+    <!-- == em String compara referencia, nao conteudo. -->
+    <module name="StringLiteralEquality"/>
+    <!-- switch sem default esquece casos novos de um enum. -->
+    <module name="MissingSwitchDefault"/>
+    <module name="FallThrough"/>
+    <module name="EmptyStatement"/>
+    <module name="EmptyBlock">
+      <property name="option" value="text"/>
+    </module>
+    <module name="EmptyCatchBlock">
+      <property name="exceptionVariableName" value="expected|ignored"/>
+    </module>
+    <module name="ModifiedControlVariable"/>
+    <module name="SimplifyBooleanExpression"/>
+    <module name="SimplifyBooleanReturn"/>
+    <module name="UnusedLocalVariable"/>
+    <module name="OneStatementPerLine"/>
+    <module name="MultipleVariableDeclarations"/>
+    <!-- if/for/while sem chaves e fonte classica de bug ao editar depois. -->
+    <module name="NeedBraces"/>
+    <module name="ArrayTypeStyle"/>
+    <module name="UpperEll"/>
+
+    <!-- ===== Design ===== -->
+    <module name="FinalClass"/>
+    <module name="InterfaceIsType"/>
+
+    <!-- ===== Tamanho (complexidade) ===== -->
+    <module name="MethodLength">
+      <property name="max" value="80"/>
+    </module>
+    <module name="ParameterNumber">
+      <property name="max" value="8"/>
+    </module>
+
+    <!--
+      Equivalente ao "noConsole" do Biome: nada de System.out/System.err/printStackTrace.
+      Use o logger (SLF4J), que tem nivel, formato e destino configuraveis.
+    -->
+    <module name="RegexpSinglelineJava">
+      <property name="format" value="System\.(out|err)\.|\.printStackTrace\("/>
+      <property name="ignoreComments" value="true"/>
+      <property name="message" value="Nao use System.out/System.err/printStackTrace: use o logger (SLF4J)."/>
+    </module>
+  </module>
+</module>
