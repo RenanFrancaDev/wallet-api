@@ -335,6 +335,48 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações.** Cobertura mede o que foi executado, não verificado: um teste sem `assert` dá 100%. Por isso a garantia de verdade vem do teste do teste (item 31), e o JaCoCo é só um piso contra regressão. A classe `main` fica fora da medição, e o PL/SQL não é medido pelo JaCoCo (tem `db/tests` e o `BancoIT`).
 
+## 33. Coleção do Postman versionada, sem a chave, e testada de verdade
+
+**Contexto.** Quem avalia (e eu mesmo, na entrevista) precisa chamar a API e simular operações sem escrever `curl`. O Swagger UI já cobre a leitura; faltava um roteiro executável das regras de negócio.
+
+**Decisão.** Uma coleção Postman v2.1 e um ambiente local em `docs/postman/`. A coleção é um **roteiro**: cria a carteira, guarda o `id` em variável, e cada requisição traz asserções (`pm.test`) para o status e para os pontos que importam (saldo após cada operação, `Idempotent-Replayed`, mesmo lançamento na repetição). As chaves de idempotência são geradas por requisição (`{{$guid}}`) e guardadas, para a repetição reaproveitar a mesma.
+
+**A API key não está nos arquivos.** O ambiente traz `apiKey` vazia e do tipo `secret`; quem usa preenche com o valor do `.env`. Conferi que o valor real não aparece em nenhum dos dois arquivos.
+
+**Verificação.** Não confiei só em escrever o JSON: rodei a coleção inteira com o **newman** contra a aplicação real e o Oracle real. Resultado: 22 requisições, 23 asserções, 0 falhas. A primeira execução achou dois erros do **meu** roteiro (não da API): `headers.get` devolve `undefined` (não `null`) quando o header não existe, e eu gravava o id do lançamento depois de uma asserção que podia falhar.
+
+**Limitações.** O Postman roda uma requisição por vez: ele mostra cada regra, mas não a disputa entre chamadas simultâneas, que é coberta pelo `ConcorrenciaIT`. A coleção depende de ordem (a pasta 2 usa a carteira da pasta 1) e não é rodada no CI.
+
+## 34. Scripts de dia a dia em PowerShell (o "npm run" do projeto)
+
+**Contexto.** O Maven não tem um bloco `scripts` como o `package.json`. Subir o ambiente exigia lembrar vários passos e, se a aplicação subisse antes de o Oracle estar pronto, o erro de conexão era pouco claro.
+
+**Decisão.** Cinco atalhos em `scripts/`: `start`, `stop`, `test`, `verify` e `postman`, todos em PowerShell (`.ps1`). Cheguei a escrever e testar também a versão em Bash, mas removi: manter duas cópias do mesmo comportamento dobra a manutenção, e o ambiente do projeto é Windows. Preferi scripts a um Makefile porque não há `make` no Windows e eles não exigem instalar nada.
+
+**Duplo clique.** No Windows, clicar duas vezes num `.ps1` abre o arquivo no editor em vez de executá-lo. Por isso `start.cmd` e `stop.cmd` são lançadores de duas linhas que chamam o PowerShell com `-ExecutionPolicy Bypass` só para aquele script (e `pause` para a janela não fechar antes de se ler um erro). O README documenta as duas maneiras (script, por duplo clique ou terminal, e passo a passo manual).
+
+**Cuidados embutidos.** O `start` confere `.env`, tamanho da `WALLET_API_KEY` (sem imprimi-la), Docker e porta livre, e espera o banco ficar `healthy`. O `stop` só encerra o processo da porta 8080 se a linha de comando for a da nossa aplicação. O `verify` para o banco de desenvolvimento (o Docker não comporta dois Oracles) e o religa no fim mesmo se o build falhar (`try/finally`).
+
+**Achado durante o teste dos scripts.** O banco **não tem volume nomeado**: os dados vivem na camada do container. O `docker compose up -d` recriou o container quando mudei de Git Bash (`c:\dev\...`) para PowerShell (`C:\dev\...`), porque a grafia do caminho entrou no cálculo de mudança de configuração. Recriar apaga as carteiras. Os scripts passam a usar `up -d --no-recreate`. Deixei o `docker-compose.yml` como está (mudar a infraestrutura é decisão à parte); um volume nomeado resolveria de vez.
+
+**Armadilhas do PowerShell 5.1.** (1) Arquivos `.ps1` sem BOM com acento são lidos na codepage errada: os `.ps1` ficam só em ASCII. (2) O `docker` escreve avisos no stderr e, com `$ErrorActionPreference = 'Stop'`, isso derrubava o script: o `start.ps1` não usa o modo `Stop` e chama o docker por `cmd /c`.
+
+**Verificação.** Executados de verdade: subir, recusar uma segunda subida, rodar a coleção do Postman (22 requisições, 23 asserções, 0 falhas), encerrar, e `verify` completo (122 unitários, 25 de integração e o piso de cobertura).
+
+**Limitações.** Só Windows (consultam portas e processos com cmdlets do Windows). Não rodam no CI. O `start` espera no máximo 5 minutos pelo banco.
+
+## 35. Identificador numérico no teste; UUID em produção
+
+**Contexto.** O `id` da carteira que a API devolve é um número (`"id": 21`). Faz sentido perguntar se não deveria ser um UUID.
+
+**Decisão.** Mantive `NUMBER` gerado por `SEQUENCE`, **apenas para fins deste teste**. **Em produção, o identificador exposto pela API seria um UUID.**
+
+**Por que número aqui.** (1) O extrato ordena por data e, no empate, pelo `id` crescente (`ORDER BY criado_em DESC, id DESC`); com UUID aleatório o desempate viraria aleatório e a paginação deixaria de ser estável. (2) O desafio pede concorrência e idempotência resolvidas no banco, e o desenho com sequences (`CACHE 20`), `FOR UPDATE` e triggers usa o número. (3) É pequeno e rápido de indexar. (4) Não há vazamento entre usuários: a API tem uma chave única e nenhuma carteira pertence a um usuário específico.
+
+**Por que UUID em produção.** Ids sequenciais são adivinháveis (`/wallets/21` convida a tentar o `22`), o que vira falha de autorização assim que houver mais de um usuário ou cliente, e revelam o volume de carteiras. Um UUID também pode ser gerado fora do banco, útil em sistemas distribuídos.
+
+**Como migrar sem perder a ordem do extrato.** Manter o número internamente (chave primária, `FOR UPDATE`, ordenação) e acrescentar uma coluna `public_id` com UUID, única e indexada, usada em todas as rotas e respostas; ou adotar UUID v7, que embute o tempo e preserva a ordem. Custo: migrations, `PKG_WALLET`, triggers de auditoria, DTOs, rotas, os testes e a coleção do Postman.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
@@ -347,4 +389,4 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 - Limite diário de débito resolvido no banco.
 - Job de conciliação com `DBMS_SCHEDULER` (soma do extrato igual ao saldo; divergências na auditoria). O campo `SALDO_APOS` já ajuda a conferir.
 - Auditoria nativa do Oracle (`AUDIT`) como camada extra além das triggers.
-- Pipeline de CI (build e testes com Testcontainers).
+- Identificador público da carteira como UUID (item 35): hoje é um número, só para fins do teste.

@@ -86,7 +86,50 @@ db/                                scripts de init do container e testes de banc
 
 **Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
 
+## Subir o ambiente: duas maneiras
+
+Pré-requisito comum: o Docker Desktop **aberto**, e o arquivo `.env` criado na raiz (`cp .env.example .env` no Git Bash, ou `Copy-Item .env.example .env` no PowerShell; troque os valores, a `WALLET_API_KEY` precisa de 16+ caracteres).
+
+### Maneira 1: pelo script (recomendada)
+
+O script faz sozinho tudo o que a maneira 2 faz à mão: confere o `.env`, o Docker e a porta, liga o banco, **espera ele ficar `healthy`** e sobe a API. Há duas formas de chamá-lo:
+
+- **Com 2 cliques:** no Explorador de Arquivos, abra a pasta `scripts` e dê **duplo clique em `start.cmd`**. Abre uma janela preta com o andamento; ela fica aberta enquanto a API roda (feche a janela, ou pressione Ctrl+C, para encerrar). Para encerrar sem fechar a janela, dê duplo clique em `stop.cmd`.
+- **Pelo terminal** (PowerShell, na raiz do projeto): `.\scripts\start.ps1`. Se o Windows bloquear o script: `powershell -ExecutionPolicy Bypass -File .\scripts\start.ps1`.
+
+Na **primeira vez** o banco leva uns 2 minutos para ficar pronto (a janela mostra `Esperando o Oracle ficar healthy`). Quando aparecer `Started WalletApiApplication`, a API está no ar: abra <http://localhost:8080/swagger-ui.html> ou rode `curl http://localhost:8080/actuator/health` (deve responder `{"status":"UP"}`).
+
+### Maneira 2: manual, passo a passo
+
+Útil para entender o que o script faz, ou fora do Windows. Na raiz do projeto:
+
+1. **Ligar o banco:** `docker compose up -d`
+2. **Esperar ficar pronto:** `docker compose ps` até a coluna de status mostrar `healthy` (ou `docker compose logs -f` até aparecer `DATABASE IS READY TO USE!`; Ctrl+C sai dos logs).
+3. **Ligar a API:** `./mvnw spring-boot:run` (no PowerShell: `.\mvnw.cmd spring-boot:run`). Na primeira subida o Flyway cria os schemas, tabelas e o package.
+4. **Conferir:** `curl http://localhost:8080/actuator/health` deve responder `{"status":"UP"}`.
+5. **Encerrar:** Ctrl+C na janela da API. Para desligar o banco: `docker compose stop` (os dados ficam no container parado).
+
+## Comandos do dia a dia (scripts)
+
+Em [`scripts/`](scripts/) ficam os atalhos em **PowerShell**, o equivalente aos `npm run dev`, `npm test` etc. (Windows PowerShell 5.1 ou superior, o que já vem no Windows). `start` e `stop` também têm um lançador de **duplo clique** (`.cmd`):
+
+| Para quê | Terminal (PowerShell) | 2 cliques |
+|---|---|---|
+| **Subir tudo para desenvolver**: confere o `.env`, liga o banco, espera ele ficar `healthy` e roda a aplicação | `.\scripts\start.ps1` | `scripts\start.cmd` |
+| **Encerrar** a aplicação (só se a porta 8080 for mesmo dela); com `-Banco`, desliga o banco também | `.\scripts\stop.ps1 [-Banco]` | `scripts\stop.cmd` |
+| **Testes unitários** (rápidos, sem Docker) | `.\scripts\test.ps1` | |
+| **Tudo o que o CI roda** (formato, lint, unitários, integração e cobertura): para o banco de desenvolvimento antes e o religa no fim | `.\scripts\verify.ps1` | |
+| **Rodar a coleção do Postman** no terminal (com a aplicação no ar) | `.\scripts\postman.ps1` | |
+
+Por que `.cmd` e não clicar no `.ps1`: no Windows, o duplo clique num `.ps1` abre o arquivo no editor em vez de executá-lo. O `.cmd` chama o PowerShell já liberando a execução, só para aquele script.
+
+Fora do Windows, use a maneira 2 (os scripts consultam processos e portas do Windows).
+
+O `start` confere antes de subir: `.env` existe, `WALLET_API_KEY` tem 16+ caracteres (o valor nunca é impresso), Docker responde e a porta 8080 está livre. Ele usa `docker compose up -d --no-recreate`: o banco **não tem volume nomeado**, então os dados vivem dentro do container, e recriá-lo (o compose faz isso se só mudar a grafia do caminho, como `c:\` e `C:\`) apagaria as carteiras. Parar (`stop -Banco`) mantém os dados; `docker compose down` os apaga.
+
 ## Rodar a aplicação
+
+Variações para rodar a aplicação:
 
 Com o banco `healthy` e o `.env` criado na raiz (a aplicação lê as senhas e a `WALLET_API_KEY` dele; **sem uma `WALLET_API_KEY` de 16+ caracteres a aplicação não sobe**):
 
@@ -123,6 +166,37 @@ Com a aplicação no ar:
 A documentação é **pública** (o contrato não expõe dado nenhum); **as rotas continuam exigindo `X-API-Key`**. Para chamá-las pelo Swagger UI, clique em **Authorize**, cole o valor da `WALLET_API_KEY` e confirme: a partir daí o Swagger UI manda o header em todas as chamadas.
 
 O contrato é **gerado a partir do código** (springdoc-openapi 3.2.1), então não fica desatualizado em relação às rotas: cada operação traz resumo, parâmetros, regras de idempotência, exemplos e **todos os códigos de resposta**, e as respostas de erro (`400`, `401`, `404`, `409`, `422`, `503`) apontam para o mesmo formato padrão de erro. Para guardar uma cópia: `curl http://localhost:8080/v3/api-docs > openapi.json`.
+
+## Testar e simular transações no Postman
+
+Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisições** (cada uma já com testes automáticos) e um ambiente local:
+
+| Arquivo | O que é |
+|---|---|
+| `wallet-api.postman_collection.json` | a coleção: saúde, carteiras, operações com idempotência, validações, extrato, segurança e documentação |
+| `wallet-api.local.postman_environment.json` | variáveis `baseUrl` (`http://localhost:8080`) e `apiKey` (vazia, do tipo secreto) |
+
+> ### Atenção: sem a `apiKey`, nada funciona
+> A API exige o header `X-API-Key` em todas as rotas (menos a de saúde). A coleção o envia sozinha, **mas o valor da chave não vem no arquivo do ambiente**, de propósito (chave não se versiona). **Você precisa preenchê-la uma vez**, senão toda requisição responde `401 NAO_AUTORIZADO` ("API key ausente ou inválida").
+>
+> 1. Abra o `.env` da raiz do projeto e copie o que vem depois de `WALLET_API_KEY=` (sem espaços e sem aspas). É a mesma chave com que a API subiu: se você mudar o `.env`, reinicie a API e atualize o Postman.
+> 2. No Postman, abra o ambiente **Wallet API - local** (Environments, ou o ícone do olho ao lado do seletor) e cole o valor na coluna **Current value** da variável `apiKey`. Salve com Ctrl+S.
+> 3. Confirme que o ambiente **Wallet API - local** está **selecionado** no canto superior direito. Com "No environment", a `apiKey` não existe.
+
+**Passo a passo:**
+1. Suba o banco e a aplicação (`.\scripts\start.ps1`, ou `docker compose up -d` e `./mvnw spring-boot:run`; ver [Subir o ambiente](#subir-o-ambiente-duas-maneiras)).
+2. No Postman: **Import** e selecione os dois arquivos (a coleção e o ambiente). Para importar o ambiente: **Environments**, **Import**.
+3. Escolha o ambiente **Wallet API - local** e **preencha a `apiKey`** (quadro acima).
+4. Teste com **0. Saúde** (deve dar `200`, não precisa de chave) e depois **Criar carteira** (deve dar `201`; `401` significa `apiKey` vazia ou errada).
+5. Rode as pastas **em ordem** (ou clique com o botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
+
+**Se der `ECONNREFUSED`:** a API não está no ar (ou ainda está subindo). Espere o `Started WalletApiApplication` no terminal.
+
+**A simulação da pasta 2** (a que mostra a regra de negócio): crédito de 100,00 (saldo 100) → o mesmo crédito repetido com a mesma chave (responde `201` com o **mesmo** lançamento e `Idempotent-Replayed: true`, saldo continua 100) → a mesma chave com outro valor (`409`) → débito de 30,00 (saldo 70) → débito de 500,00 (`422`, nada muda) → consulta do saldo (70,00). Para repetir só o passo de idempotência com chaves novas, rode de novo o **Crédito de 100.00**: ele gera uma chave nova a cada execução.
+
+**Sem Postman:** a mesma coleção roda no terminal com o newman: `npx newman run docs/postman/wallet-api.postman_collection.json -e docs/postman/wallet-api.local.postman_environment.json --env-var "apiKey=$WALLET_API_KEY"`.
+
+> O Postman executa as requisições **uma depois da outra**. A concorrência de verdade (dezenas de chamadas simultâneas) é provada pelo `ConcorrenciaIT` (ver [Como testar](#como-testar)); no Postman dá para ver o resultado de cada regra, não a disputa.
 
 ## API
 
@@ -298,6 +372,12 @@ Os padrões, as ferramentas, os testes que o CI exige e o motivo de cada escolha
 
 Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELETE` ou `SELECT` direto nas tabelas, e qualquer acesso ao schema de auditoria, retornam `ORA-00942`. O teste `regras_pkg_wallet.sql` automatiza essa prova.
 
+## Identificador da carteira: número no teste, UUID em produção
+
+Nesta entrega o `id` da carteira (e do lançamento) é um **número** gerado por uma `SEQUENCE` do Oracle (`21`, `22`...). Isso é uma escolha **apenas para fins deste teste**: o extrato ordena por data e, no empate, pelo `id` crescente, e o desenho de concorrência (sequences com cache, `FOR UPDATE`, triggers) foi pensado em cima dele. Ids sequenciais são adivinháveis (`/wallets/21` convida a tentar o `22`) e revelam o volume de carteiras.
+
+**Em produção, o identificador exposto pela API seria um UUID.** O caminho seria manter o número internamente (chave primária e ordenação) e acrescentar uma coluna `public_id` com UUID, usada nas rotas, ou usar UUID v7, que embute o tempo e preserva a ordem do extrato. Detalhes em [DECISIONS.md](DECISIONS.md) (item 35).
+
 ## Próximas etapas
 
-Testes de integração com Testcontainers (incluindo o teste concorrente em Java), cobertura mínima (JaCoCo) e a revisão final dos documentos.
+A revisão final dos documentos e a entrega (PR da `develop` para a `main`). Testes de integração com Testcontainers (incluindo o teste concorrente em Java) e a cobertura mínima (JaCoCo) já estão prontos.
