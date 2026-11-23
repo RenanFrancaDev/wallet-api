@@ -505,6 +505,3 @@ Nesta entrega o `id` da carteira (e do lançamento) é um **número** gerado por
 
 **Em produção, o identificador exposto pela API seria um UUID.** O caminho seria manter o número internamente (chave primária e ordenação) e acrescentar uma coluna `public_id` com UUID, usada nas rotas, ou usar UUID v7, que embute o tempo e preserva a ordem do extrato. Detalhes em [DECISIONS.md](DECISIONS.md) (item 35).
 
-## O que ficou de fora (itens "plus" do enunciado)
-
-Entregue: **todo o Núcleo obrigatório e todo o Perfil esperado** (7.1 e 7.2). Dos itens opcionais (7.3), **não** foram feitos, por escolha de escopo ("menor, bem-feito e bem-defendido"): teste de carga (k6/Gatling/JMeter), transferência entre carteiras, limite diário de débito, job de conciliação com `DBMS_SCHEDULER` e Dockerfile da aplicação. A observabilidade é a mínima: `health` e `info` do Actuator (sem métricas nem logs estruturados). O que eu faria com mais tempo, e em que ordem, está em [DECISIONS.md](DECISIONS.md). A consistência sob concorrência já é provada pelo `ConcorrenciaIT`, que cobre o ponto central do teste de carga (N operações simultâneas sobre a mesma carteira).
