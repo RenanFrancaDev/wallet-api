@@ -176,11 +176,21 @@ Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisiç�
 | `wallet-api.postman_collection.json` | a coleção: saúde, carteiras, operações com idempotência, validações, extrato, segurança e documentação |
 | `wallet-api.local.postman_environment.json` | variáveis `baseUrl` (`http://localhost:8080`) e `apiKey` (vazia, do tipo secreto) |
 
+> ### Atenção: sem a `apiKey`, nada funciona
+> A API exige o header `X-API-Key` em todas as rotas (menos a de saúde). A coleção o envia sozinha, **mas o valor da chave não vem no arquivo do ambiente**, de propósito (chave não se versiona). **Você precisa preenchê-la uma vez**, senão toda requisição responde `401 NAO_AUTORIZADO` ("API key ausente ou inválida").
+>
+> 1. Abra o `.env` da raiz do projeto e copie o que vem depois de `WALLET_API_KEY=` (sem espaços e sem aspas). É a mesma chave com que a API subiu: se você mudar o `.env`, reinicie a API e atualize o Postman.
+> 2. No Postman, abra o ambiente **Wallet API - local** (Environments, ou o ícone do olho ao lado do seletor) e cole o valor na coluna **Current value** da variável `apiKey`. Salve com Ctrl+S.
+> 3. Confirme que o ambiente **Wallet API - local** está **selecionado** no canto superior direito. Com "No environment", a `apiKey` não existe.
+
 **Passo a passo:**
-1. Suba o banco e a aplicação (`docker compose up -d` e `./mvnw spring-boot:run`).
-2. No Postman: **Import** e selecione os dois arquivos.
-3. Escolha o ambiente **Wallet API - local** (canto superior direito) e preencha a variável **`apiKey`** com o valor de `WALLET_API_KEY` do seu `.env`. A chave **não vem no arquivo** de propósito: ela nunca deve ser versionada.
-4. Rode as pastas **em ordem** (ou clique com o botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
+1. Suba o banco e a aplicação (`.\scripts\start.ps1`, ou `docker compose up -d` e `./mvnw spring-boot:run`; ver [Subir o ambiente](#subir-o-ambiente-duas-maneiras)).
+2. No Postman: **Import** e selecione os dois arquivos (a coleção e o ambiente). Para importar o ambiente: **Environments**, **Import**.
+3. Escolha o ambiente **Wallet API - local** e **preencha a `apiKey`** (quadro acima).
+4. Teste com **0. Saúde** (deve dar `200`, não precisa de chave) e depois **Criar carteira** (deve dar `201`; `401` significa `apiKey` vazia ou errada).
+5. Rode as pastas **em ordem** (ou clique com o botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
+
+**Se der `ECONNREFUSED`:** a API não está no ar (ou ainda está subindo). Espere o `Started WalletApiApplication` no terminal.
 
 **A simulação da pasta 2** (a que mostra a regra de negócio): crédito de 100,00 (saldo 100) → o mesmo crédito repetido com a mesma chave (responde `201` com o **mesmo** lançamento e `Idempotent-Replayed: true`, saldo continua 100) → a mesma chave com outro valor (`409`) → débito de 30,00 (saldo 70) → débito de 500,00 (`422`, nada muda) → consulta do saldo (70,00). Para repetir só o passo de idempotência com chaves novas, rode de novo o **Crédito de 100.00**: ele gera uma chave nova a cada execução.
 
