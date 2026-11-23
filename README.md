@@ -2,89 +2,38 @@
 
 Serviço de carteira digital (crédito e débito, extrato imutável, trilha de auditoria) em **Java + Spring Boot** sobre **Oracle Database Free**. As regras de consistência (saldo nunca negativo, nenhuma operação aplicada em dobro, mesmo sob concorrência) são resolvidas **dentro do banco**, em PL/SQL, triggers e sequences. A aplicação Java é uma camada de API sobre elas.
 
-> **Estado atual:** camada de banco pronta e testada (schemas, tabelas, auditoria, `PKG_WALLET`, grants), projeto Spring Boot com o Flyway aplicando as migrations no startup, e os endpoints de **criar** e **consultar** carteira, de **registrar operação** (crédito e débito, com idempotência) e o **extrato** (paginado, com filtro por período), com tradução padronizada dos erros `ORA-20xxx` para HTTP, autenticação por **API key** (`X-API-Key`) e a documentação **OpenAPI/Swagger** gerada a partir do código. Os testes de integração com Testcontainers estão em construção e entram na próxima etapa. Este README é atualizado a cada etapa.
+> **Estado atual:** entrega completa. Os 4 endpoints do enunciado (criar e consultar carteira, registrar operação com idempotência e extrato paginado com filtro por período), as regras de consistência dentro do Oracle (PL/SQL, triggers, sequences), autenticação por **API key**, documentação **OpenAPI/Swagger**, testes unitários e de integração (inclusive de **concorrência**, em Java, com Oracle real) e CI com piso de cobertura.
 
 **Stack:** Java 21, Spring Boot 4.2.0, Maven (wrapper incluído), Flyway, driver JDBC da Oracle, Oracle Database Free 23ai (Docker).
 
 As decisões técnicas e os motivos estão em [DECISIONS.md](DECISIONS.md).
 
-## Pré-requisitos
+## Tecnologias necessárias
 
-- Docker (Docker Desktop com WSL2 no Windows, ou Docker Engine no Linux/macOS) com **pelo menos 4 GB de memória** disponíveis. Com menos de 2 GB o Oracle não inicializa.
-- Git Bash (Windows) ou qualquer shell POSIX.
-- Java 17+ (o projeto foi desenvolvido com Java 21). O Maven não precisa estar instalado: o wrapper `./mvnw` baixa a versão certa.
+| Tecnologia | Versão | Para quê | Obrigatória? |
+|---|---|---|---|
+| **Docker Desktop** (com WSL2 no Windows) | recente (testado com Docker 28.3); **4 GB de memória** para o Docker | roda o Oracle e os testes de integração. Com menos de 2 GB o Oracle não inicializa | sim |
+| **Java (JDK)** | 17 ou superior (desenvolvido com o 21) | compila e roda a API | sim |
+| **Maven** | não precisa instalar | o wrapper `./mvnw` (`mvnw.cmd` no PowerShell) baixa a versão certa | n/a |
+| **Git** | qualquer | clonar o repositório | sim |
+| **PowerShell** | 5.1 ou superior (já vem no Windows) | scripts `start`, `stop`, `verify` etc. Fora do Windows, use o passo a passo manual | recomendado |
+| **Postman** | recente | testar e simular transações (coleção pronta) | opcional |
+| **Node.js** (`npx`) | LTS | só para rodar a coleção do Postman no terminal (newman) | opcional |
+| **DBeaver** ou SQL Developer | qualquer | inspecionar o banco (ver [Papéis no Oracle](#papéis-no-oracle-quem-faz-o-quê)) | opcional |
 
-## Subir o banco
+Já vêm no projeto, sem instalar nada: Spring Boot 4.2.0, Flyway, driver JDBC da Oracle, springdoc (Swagger) e Testcontainers. A imagem do banco é o **Oracle Database Free 23ai** (`gvenzl/oracle-free:23.26.4-slim-faststart`, tag fixa).
 
-```bash
-cp .env.example .env        # troque os valores: senhas só com letras e números; WALLET_API_KEY com 16+ caracteres
-docker compose up -d
-docker compose logs -f      # espere aparecer "DATABASE IS READY TO USE!" (Ctrl+C sai dos logs)
-docker compose ps           # STATUS deve ficar "healthy"
-```
+## Início rápido
 
-O script [`db/init/01_usuarios.sh`](db/init/01_usuarios.sh) roda **só na primeira inicialização** (diretório de dados vazio) e cria os três usuários no PDB `FREEPDB1`. Para recriar do zero: `docker compose down -v && docker compose up -d`.
-
-As senhas vêm do `.env`, que **não** vai para o Git. A imagem usa tag fixa (`gvenzl/oracle-free:23.26.4-slim-faststart`).
-
-## Schemas e privilégios
-
-| Usuário | Quem usa | O que pode |
-|---|---|---|
-| `WALLET_OWNER` | migrations (Flyway) | cria e é dono de tabelas, sequences, packages e triggers. A aplicação nunca conecta com ele |
-| `WALLET_APP` | aplicação Spring | conectar, `EXECUTE` no `PKG_WALLET` e `SELECT` nas views `V_CARTEIRA` e `V_EXTRATO`. **Sem DML em tabelas**, sem acesso à auditoria |
-| `WALLET_AUDIT` | ninguém no dia a dia | dono da trilha de auditoria. O `WALLET_OWNER` só tem `EXECUTE` na procedure que grava nela |
-
-Conexão para inspeção (DBeaver, SQL Developer): host `localhost`, porta `1521`, **Service Name** `FREEPDB1`, um usuário por conexão.
-
-## Migrations
-
-Ficam em `src/main/resources/db/migration/`, em **dois conjuntos**, cada um executado pelo seu usuário. A ordem importa: `audit` primeiro, porque a trigger do OWNER chama a procedure do schema de auditoria.
-
-| Arquivo | Conteúdo |
-|---|---|
-| `audit/V1__tabela_e_sequence_auditoria.sql` | `SALDO_AUDITORIA` e sua sequence |
-| `audit/V2__pkg_audit.sql` | `PKG_AUDIT.REGISTRAR_SALDO` e `GRANT EXECUTE` ao OWNER |
-| `owner/V1__tabelas_e_sequences.sql` | `CARTEIRA`, `LANCAMENTO`, sequences, índice do extrato |
-| `owner/V2__pkg_wallet_ctx.sql` | contexto da operação em andamento (para a auditoria) |
-| `owner/V3__triggers.sql` | imutabilidade do extrato e auditoria de saldo |
-| `owner/V4__pkg_wallet.sql` | `PKG_WALLET`: criar carteira e registrar operação |
-| `owner/V5__views_de_leitura.sql` | `V_CARTEIRA` e `V_EXTRATO` |
-| `owner/V6__grants_wallet_app.sql` | privilégios mínimos do `WALLET_APP` |
-
-As migrations são aplicadas **automaticamente quando a aplicação sobe**, pela classe [`FlywayConfig`](src/main/java/br/com/renanfranca/walletapi/config/FlywayConfig.java): primeiro o conjunto `audit` (conectada como `WALLET_AUDIT`), depois o `owner` (como `WALLET_OWNER`). Cada conjunto tem a sua tabela `flyway_schema_history` no próprio schema. A aplicação, ao servir requisições, usa só o `WALLET_APP`.
-
-## Estrutura do projeto e dependências
-
-Pacote raiz `br.com.renanfranca.walletapi` (group `br.com.renanfranca`, artifact `wallet-api`), Java 21, Maven, empacotado como jar com Tomcat embutido.
-
-```
-src/main/java/br/com/renanfranca/walletapi/
-  WalletApiApplication.java        ponto de entrada
-  config/FlywayConfig.java         executa as migrations no startup
-  controller/                      rotas HTTP (só traduz HTTP; sem regra de negócio)
-  service/                         casos de uso e controle da transação (@Transactional)
-  repository/                      acesso ao banco: escreve pelo PKG_WALLET, lê pelas views
-  model/                           objetos de domínio (records imutáveis)
-  dto/                             corpos de requisição e resposta
-  exception/                       catálogo de erros, payload padrão e tradução ORA-20xxx -> HTTP
-src/main/resources/
-  application.properties           conexão (WALLET_APP), senhas do .env, Actuator
-  db/migration/{audit,owner}/      migrations Flyway
-db/                                scripts de init do container e testes de banco
-```
-
-| Dependência | Para que | Por que |
-|---|---|---|
-| Spring Web | endpoints REST | os 4 endpoints do enunciado |
-| JDBC API | `JdbcTemplate`/`SimpleJdbcCall` | toda escrita passa pelo package PL/SQL; leitura por views |
-| Validation | validação do corpo das requisições | a regra definitiva continua no banco |
-| Flyway + módulo Oracle | migrations versionadas | exigido; o suporte a Oracle é um módulo separado desde o Flyway 10 |
-| Oracle Driver (ojdbc17) | conexão com o Oracle | escopo runtime |
-| Actuator | `health` e `info` | observabilidade mínima |
-| Testcontainers (oracle-free) | Oracle real nos testes | testes de integração, incluindo concorrência |
-
-**Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
+1. **Configure o `.env`** (na raiz do projeto): `Copy-Item .env.example .env` no PowerShell ou `cp .env.example .env` no Git Bash, e troque os valores:
+   - `ORACLE_PASSWORD`, `WALLET_OWNER_PASSWORD`, `WALLET_APP_PASSWORD`, `WALLET_AUDIT_PASSWORD`: senhas do banco, **só letras e números**.
+   - **`WALLET_API_KEY`**: a **API key**. É a senha que todo cliente da API precisa mandar no header `X-API-Key`. **Quem escolhe é você**, com **16 ou mais caracteres**; sem ela a API **não sobe**. Para gerar uma, no PowerShell: `-join ((48..57)+(65..90)+(97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})`.
+2. **Abra o Docker Desktop** e espere ele ficar "running".
+3. **Suba tudo** (escolha uma das duas maneiras, detalhadas em [Subir o ambiente](#subir-o-ambiente-duas-maneiras)):
+   - **Com o script:** duplo clique em `scripts\start.cmd`, ou `.\scripts\start.ps1` no PowerShell. Liga o banco, espera ficar `healthy` e sobe a API.
+   - **Manual:** `docker compose up -d`, esperar `healthy` em `docker compose ps`, e `./mvnw spring-boot:run`.
+4. **Confira:** `curl http://localhost:8080/actuator/health` deve responder `{"status":"UP"}`, e o Swagger UI abre em <http://localhost:8080/swagger-ui.html>. Na primeira vez o banco leva uns 2 minutos.
+5. **Teste as rotas:** pelo Swagger UI (botão **Authorize**, cole a `WALLET_API_KEY`) ou pela [coleção do Postman](#testar-e-simular-transações-no-postman), que **também exige a API key**.
 
 ## Subir o ambiente: duas maneiras
 
@@ -146,27 +95,6 @@ Execute a partir da **raiz do projeto**, para a aplicação encontrar o `.env` (
 curl http://localhost:8080/actuator/health    # {"status":"UP"}  (a única rota pública)
 ```
 
-## Modelo de dados
-
-- **`CARTEIRA`**: `ID` (sequence), `TITULAR` (opcional), `SALDO NUMBER(15,2)` com `CHECK (SALDO >= 0)`, `CRIADA_EM`.
-- **`LANCAMENTO`** (extrato): `ID`, `CARTEIRA_ID`, `TIPO` (`CREDITO` ou `DEBITO`), `VALOR > 0`, `SALDO_APOS`, `CHAVE_IDEMPOTENCIA`, `CRIADO_EM`. `UNIQUE (CARTEIRA_ID, CHAVE_IDEMPOTENCIA)`.
-- **`SALDO_AUDITORIA`** (schema de auditoria): saldo anterior, saldo novo, operação que causou a mudança, usuário do banco e momento.
-
-Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, inclusive por SQL direto) e toda mudança de saldo grava a trilha na mesma transação.
-
-## Documentação interativa (OpenAPI e Swagger UI)
-
-Com a aplicação no ar:
-
-| O que | Endereço |
-|---|---|
-| **Swagger UI**: ler a API e testar as rotas no navegador | <http://localhost:8080/swagger-ui.html> |
-| **Contrato OpenAPI 3.1** em JSON (para gerar clientes, importar no Postman etc.) | <http://localhost:8080/v3/api-docs> |
-
-A documentação é **pública** (o contrato não expõe dado nenhum); **as rotas continuam exigindo `X-API-Key`**. Para chamá-las pelo Swagger UI, clique em **Authorize**, cole o valor da `WALLET_API_KEY` e confirme: a partir daí o Swagger UI manda o header em todas as chamadas.
-
-O contrato é **gerado a partir do código** (springdoc-openapi 3.2.1), então não fica desatualizado em relação às rotas: cada operação traz resumo, parâmetros, regras de idempotência, exemplos e **todos os códigos de resposta**, e as respostas de erro (`400`, `401`, `404`, `409`, `422`, `503`) apontam para o mesmo formato padrão de erro. Para guardar uma cópia: `curl http://localhost:8080/v3/api-docs > openapi.json`.
-
 ## Testar e simular transações no Postman
 
 Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisições** (cada uma já com testes automáticos) e um ambiente local:
@@ -183,12 +111,14 @@ Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisiç�
 > 2. No Postman, abra o ambiente **Wallet API - local** (Environments, ou o ícone do olho ao lado do seletor) e cole o valor na coluna **Current value** da variável `apiKey`. Salve com Ctrl+S.
 > 3. Confirme que o ambiente **Wallet API - local** está **selecionado** no canto superior direito. Com "No environment", a `apiKey` não existe.
 
-**Passo a passo:**
-1. Suba o banco e a aplicação (`.\scripts\start.ps1`, ou `docker compose up -d` e `./mvnw spring-boot:run`; ver [Subir o ambiente](#subir-o-ambiente-duas-maneiras)).
-2. No Postman: **Import** e selecione os dois arquivos (a coleção e o ambiente). Para importar o ambiente: **Environments**, **Import**.
-3. Escolha o ambiente **Wallet API - local** e **preencha a `apiKey`** (quadro acima).
-4. Teste com **0. Saúde** (deve dar `200`, não precisa de chave) e depois **Criar carteira** (deve dar `201`; `401` significa `apiKey` vazia ou errada).
-5. Rode as pastas **em ordem** (ou clique com o botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
+**Ordem para funcionar** (siga na sequência):
+1. **Suba a API** (`.\scripts\start.ps1` ou o passo a passo manual) e espere o `Started WalletApiApplication`.
+2. **Importe a coleção:** no Postman, **Import** (ou **File > Import**) e escolha `docs/postman/wallet-api.postman_collection.json`.
+3. **Importe o ambiente:** **Import** de novo, agora com `docs/postman/wallet-api.local.postman_environment.json`. (Também dá por **Environments > Import**.)
+4. **Selecione o ambiente** **Wallet API - local** no seletor do canto superior direito. Com "No environment", a `apiKey` não existe.
+5. **Preencha a `apiKey`** com o valor de `WALLET_API_KEY` do seu `.env` (quadro acima). **Sem isso todas as rotas respondem `401`.**
+6. **Teste:** **0. Saúde** deve dar `200` (não precisa de chave) e **Criar carteira** deve dar `201`. `401` significa `apiKey` vazia ou errada.
+7. **Rode as pastas em ordem** (ou botão direito na coleção, **Run collection**): a pasta 1 cria uma carteira e guarda o `id`; a pasta 2 usa essa carteira.
 
 **Se der `ECONNREFUSED`:** a API não está no ar (ou ainda está subindo). Espere o `Started WalletApiApplication` no terminal.
 
@@ -197,6 +127,203 @@ Em [`docs/postman/`](docs/postman/) há uma coleção pronta com **22 requisiç�
 **Sem Postman:** a mesma coleção roda no terminal com o newman: `npx newman run docs/postman/wallet-api.postman_collection.json -e docs/postman/wallet-api.local.postman_environment.json --env-var "apiKey=$WALLET_API_KEY"`.
 
 > O Postman executa as requisições **uma depois da outra**. A concorrência de verdade (dezenas de chamadas simultâneas) é provada pelo `ConcorrenciaIT` (ver [Como testar](#como-testar)); no Postman dá para ver o resultado de cada regra, não a disputa.
+
+## Documentação interativa (OpenAPI e Swagger UI)
+
+Com a aplicação no ar:
+
+| O que | Endereço |
+|---|---|
+| **Swagger UI**: ler a API e testar as rotas no navegador | <http://localhost:8080/swagger-ui.html> |
+| **Contrato OpenAPI 3.1** em JSON (para gerar clientes, importar no Postman etc.) | <http://localhost:8080/v3/api-docs> |
+
+A documentação é **pública** (o contrato não expõe dado nenhum); **as rotas continuam exigindo `X-API-Key`**. Para chamá-las pelo Swagger UI, clique em **Authorize**, cole o valor da `WALLET_API_KEY` e confirme: a partir daí o Swagger UI manda o header em todas as chamadas.
+
+O contrato é **gerado a partir do código** (springdoc-openapi 3.2.1), então não fica desatualizado em relação às rotas: cada operação traz resumo, parâmetros, regras de idempotência, exemplos e **todos os códigos de resposta**, e as respostas de erro (`400`, `401`, `404`, `409`, `422`, `503`) apontam para o mesmo formato padrão de erro. Para guardar uma cópia: `curl http://localhost:8080/v3/api-docs > openapi.json`.
+
+## Como funciona: o caminho de uma operação
+
+Exemplo: `POST /wallets/21/transactions` com um crédito de 100,00.
+
+```
+Cliente (Postman, curl, outro sistema)
+  |  HTTP, com o header X-API-Key (e Idempotency-Key nas operações)
+  v
+API Spring Boot (porta 8080)
+  1. ApiKeyFilter ..... chave ausente ou errada: responde 401 e nem chega ao controller
+  2. Controller ....... valida o corpo (tipo e valor): inválido, responde 400
+  3. Service .......... abre a transação (@Transactional)
+  4. Repository ....... chama o banco conectado como WALLET_APP
+  |
+  |  JDBC como WALLET_APP: só pode EXECUTE no PKG_WALLET e SELECT nas views
+  v
+Oracle (FREEPDB1)
+  +-- WALLET_OWNER ------------------------------------------------------------+
+  |  PKG_WALLET.REGISTRAR_OPERACAO                                              |
+  |    a) trava a linha da carteira (FOR UPDATE, espera até 5 s; senão 503)     |
+  |    b) a chave de idempotência já existe? mesmo conteúdo: devolve o          |
+  |       resultado original (Idempotent-Replayed: true); outro conteúdo: 409   |
+  |    c) débito maior que o saldo? 422, nada é alterado                        |
+  |    d) grava a linha no extrato (LANCAMENTO) e atualiza o saldo (CARTEIRA)   |
+  |    e) a trigger do saldo chama WALLET_AUDIT.PKG_AUDIT.REGISTRAR_SALDO       |
+  +-----------------------------------------------------------------------------+
+  +-- WALLET_AUDIT ------------------------------------------------------------+
+  |  SALDO_AUDITORIA: uma linha por mudança de saldo (anterior, novo,           |
+  |  operação que causou, usuário do banco e momento)                           |
+  +-----------------------------------------------------------------------------+
+  |
+  v
+API faz o COMMIT (o PKG_WALLET nunca faz commit) e responde 201
+```
+
+Dois pontos que explicam o desenho: o **lock vem antes** da checagem de idempotência (assim duas chamadas iguais e simultâneas não se atropelam), e o **COMMIT é da API**, então a operação, o saldo e a trilha de auditoria entram juntos ou nenhum entra.
+
+## Papéis no Oracle: quem faz o quê
+
+São **quatro usuários** no mesmo banco (`FREEPDB1`). Cada um enxerga só o que precisa (privilégio mínimo):
+
+| Usuário | Função | Quem usa |
+|---|---|---|
+| `SYS` / `SYSTEM` (senha `ORACLE_PASSWORD`) | administrador do container | só o script de init, que cria os outros três. A API nunca o usa |
+| `WALLET_OWNER` | **dono** das tabelas, sequences, package e triggers | só o Flyway (as migrations). A API nunca conecta com ele |
+| `WALLET_APP` | **o usuário da aplicação** | a API Spring, em toda requisição |
+| `WALLET_AUDIT` | **dono da trilha de auditoria** | ninguém no dia a dia |
+
+**Quem enxerga o quê** (✓ pode, ✗ não pode):
+
+| Objeto | `WALLET_APP` | `WALLET_OWNER` | `WALLET_AUDIT` |
+|---|---|---|---|
+| Tabelas `CARTEIRA` e `LANCAMENTO` | ✗ (nem leitura) | ✓ dono (mas o extrato é imutável por trigger) | ✗ |
+| Views `V_CARTEIRA` e `V_EXTRATO` | ✓ só `SELECT` | ✓ dono | ✗ |
+| `PKG_WALLET` (criar carteira, registrar operação) | ✓ `EXECUTE` | ✓ dono | ✗ |
+| Tabela `SALDO_AUDITORIA` (a trilha) | ✗ | ✗ nem `INSERT` direto | ✓ dono |
+| `PKG_AUDIT.REGISTRAR_SALDO` | ✗ | ✓ só `EXECUTE` | ✓ dono |
+
+**O que cada um faz e não deixa fazer, com exemplos reais:**
+
+| Usuário | Não deixa fazer | Exemplo prático |
+|---|---|---|
+| **`WALLET_APP`** | mexer em tabela, ler a auditoria | Se alguém tentar `UPDATE CARTEIRA SET SALDO = 1000000` conectado como `WALLET_APP` (um bug, ou uma falha de SQL injection), o Oracle responde `ORA-00942` (tabela inexistente para ele). O saldo só muda pelo `PKG_WALLET`, que valida tudo. Ele também não lê a trilha (`ORA-00942`) nem chama o `PKG_AUDIT` (`PLS-00201`) |
+| **`WALLET_OWNER`** | alterar ou apagar o extrato, forjar a trilha, deixar saldo negativo | `UPDATE` ou `DELETE` em `LANCAMENTO` falha com `ORA-20005` (trigger), **mesmo sendo o dono**. `INSERT` direto na `SALDO_AUDITORIA` falha com `ORA-00942`: ele só consegue chamar a procedure. `UPDATE CARTEIRA SET SALDO = -1` falha com `ORA-02290` (`CHECK`) |
+| **`WALLET_AUDIT`** | tocar nos dados da carteira | Não tem nenhum privilégio sobre as tabelas do `WALLET_OWNER`: a função dele é **só guardar a trilha** (tabela e procedure). Quem grava nela é a trigger, pela procedure |
+
+**Situações comuns, do começo ao fim:**
+
+| Situação | O que acontece |
+|---|---|
+| Crédito de 100,00 pela API | `WALLET_APP` executa o `PKG_WALLET`; o pacote (dono: `WALLET_OWNER`) grava o extrato e o saldo; a trigger chama o `WALLET_AUDIT`, que registra "saldo 0 → 100, usuário `WALLET_APP`". Tudo no mesmo `COMMIT` |
+| O cliente repete o mesmo crédito (retry) | A chave de idempotência já existe: o pacote devolve o lançamento original, **sem alterar o saldo** e sem nova linha de auditoria. A API marca `Idempotent-Replayed: true` |
+| Débito de 500,00 com saldo 70,00 | O pacote recusa com `-20003` (a API devolve `422`), nada é gravado e a trilha não muda |
+| Alguém com acesso de dono altera o saldo por SQL direto (fora do pacote) | É permitido (ele é o dono), **mas deixa rastro**: a trigger grava na trilha uma linha com `OPERACAO_ID` **vazio**, o sinal de alteração suspeita |
+| Alguém tenta apagar o histórico | `DELETE` em `LANCAMENTO`: `ORA-20005`, até para o dono |
+
+**Limites assumidos** (detalhes no [DECISIONS.md](DECISIONS.md)): o dono do schema pode desabilitar uma trigger ou executar `TRUNCATE`, e o `WALLET_OWNER` pode chamar o `PKG_AUDIT` com valores falsos. Em produção, isso se cobre com a auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
+
+**Conexão para inspeção** (DBeaver, SQL Developer): host `localhost`, porta `1521`, **Service Name** `FREEPDB1`, **uma conexão por usuário**. Logar como cada um e rodar as consultas acima é a melhor forma de ver as diferenças.
+
+## Estratégia de concorrência e idempotência (dentro do banco) e por quê
+
+O enunciado pede que o saldo nunca fique negativo, que nenhuma operação seja aplicada em dobro e que o saldo final seja a soma consistente do que foi aplicado, **mesmo com chamadas simultâneas**. Tudo isso é resolvido no Oracle, em camadas:
+
+| Camada | O que garante | Como |
+|---|---|---|
+| **Lock pessimista por carteira** | operações da mesma carteira entram **uma de cada vez**; carteiras diferentes não se bloqueiam | `PKG_WALLET.REGISTRAR_OPERACAO` começa com `SELECT ... FOR UPDATE WAIT 5` na linha da carteira. Quem não consegue o lock em 5 s recebe `ORA-20006` (a API devolve `503`, e o cliente pode tentar de novo) |
+| **Idempotência checada depois do lock** | nenhuma operação é aplicada em dobro | com a carteira travada, o pacote procura a chave: mesma chave e mesmo conteúdo devolve o resultado original sem tocar no saldo; mesma chave com outro conteúdo é `ORA-20004` (`409`). A ordem importa: checando **antes** do lock, duas chamadas iguais e simultâneas poderiam passar juntas |
+| **`UNIQUE (CARTEIRA_ID, CHAVE_IDEMPOTENCIA)`** | rede de segurança da idempotência | se algo escapasse, o próprio banco recusa a segunda linha |
+| **`CHECK (SALDO >= 0)`** | o saldo **nunca** fica negativo, nem por SQL direto | última barreira, além da validação no pacote (`ORA-20003`, `422`) |
+| **Transação da aplicação** | extrato, saldo e trilha de auditoria entram juntos ou nenhum entra | o `PKG_WALLET` nunca faz `COMMIT`; a API (`@Transactional`) confirma ao fim |
+
+**Por que lock pessimista e não as alternativas:** (1) *versão otimista* (coluna de versão e retry) vira uma fila de retentativas quando muitas operações disputam a mesma carteira, que é justamente o caso do teste; (2) *isolamento `SERIALIZABLE`* faz o Oracle abortar transações com `ORA-08177`, empurrando o retry para a aplicação; (3) um `UPDATE ... WHERE SALDO >= :valor` sozinho protege o saldo, mas não resolve a idempotência nem a gravação atômica do extrato. O lock por carteira é simples de explicar e de provar. O custo assumido é que uma carteira muito disputada vira fila (limite de 5 s).
+
+**Como isso é provado:** o `ConcorrenciaIT` dispara dezenas de chamadas simultâneas pela API contra o Oracle real (por exemplo, 30 débitos de 10 sobre saldo 100: exatamente 10 passam e 20 são recusados) e confere no banco que saldo, extrato e auditoria batem. Ao remover o `FOR UPDATE`, os 5 testes falham (ver [Como testar](#como-testar) e os itens 5 e 31 do [DECISIONS.md](DECISIONS.md)).
+
+## Sequences
+
+Os identificadores vêm de **sequences explícitas**, uma por tabela (`CARTEIRA`, `LANCAMENTO` e a trilha de auditoria): `START WITH 1 INCREMENT BY 1 CACHE 20 NOCYCLE`.
+
+- **`CACHE 20`:** o Oracle reserva 20 números de cada vez em memória, o que evita ir ao dicionário a cada `NEXTVAL` sob concorrência. A consequência é que **podem surgir lacunas** (`1, 2, 3, 21...`) se o banco reiniciar ou se uma transação sofrer rollback. **Os ids são únicos e crescentes, mas não contínuos**, e nada no sistema depende de continuidade.
+- **Por que não `NOCACHE`:** ele não elimina as lacunas (um rollback ainda consome o número) e custa em concorrência.
+- **Crescentes:** o extrato usa o `id` como desempate de ordenação, então a ordem crescente importa (ver [Identificador da carteira](#identificador-da-carteira-número-no-teste-uuid-em-produção)).
+
+## Premissas assumidas
+
+O enunciado deixa a modelagem em aberto de propósito. Estas são as premissas, e o motivo de cada uma está no [DECISIONS.md](DECISIONS.md):
+
+| Tema | Premissa adotada |
+|---|---|
+| **Moeda e precisão** | só BRL. Saldo e valor com 2 casas (`NUMBER(15,2)`); o valor da operação tem no máximo 13 dígitos inteiros e 2 casas, e é sempre maior que zero |
+| **Titular** | opcional, texto de até 120 caracteres (não é documento fiscal) |
+| **Identificadores** | números gerados por sequence, só para fins do teste (em produção, UUID) |
+| **Chave de idempotência** | obrigatória no header `Idempotency-Key`, até 100 caracteres, única por carteira. Não faz parte do corpo porque identifica a **tentativa**, não o conteúdo |
+| **Repetição** | a mesma chave com o mesmo conteúdo devolve `201` com o mesmo resultado e o header `Idempotent-Replayed: true`; com outro conteúdo, `409` |
+| **Débito recusado** | `422`, **não deixa linha no extrato** (extrato só tem operações aplicadas) |
+| **Extrato** | do mais recente para o mais antigo (data e depois `id`); período `[from, to)` com `from` inclusivo e `to` exclusivo, datas ISO-8601 com fuso; paginação `page` (a partir de 0) e `size` (1 a 100, padrão 20) |
+| **Autenticação** | uma **API key única** da aplicação (`X-API-Key`), sem usuário final, JWT ou OAuth (fora de escopo). Só `GET /actuator/health` é público, além da documentação |
+| **Quem controla a transação** | a aplicação, não o pacote PL/SQL |
+| **Fora de escopo** | múltiplas moedas, câmbio, juros, estorno, agendamento e frontend, como o enunciado manda |
+
+## O banco no Docker: como o container é preparado
+
+O script [`db/init/01_usuarios.sh`](db/init/01_usuarios.sh) roda **só na primeira inicialização** (diretório de dados vazio) e cria os três usuários no PDB `FREEPDB1`. Para recriar do zero: `docker compose down -v && docker compose up -d` (**apaga os dados**).
+
+As senhas vêm do `.env`, que **não** vai para o Git. A imagem usa tag fixa (`gvenzl/oracle-free:23.26.4-slim-faststart`). Os comandos para ligar o banco estão em [Subir o ambiente](#subir-o-ambiente-duas-maneiras).
+
+## Migrations
+
+Ficam em `src/main/resources/db/migration/`, em **dois conjuntos**, cada um executado pelo seu usuário. A ordem importa: `audit` primeiro, porque a trigger do OWNER chama a procedure do schema de auditoria.
+
+| Arquivo | Conteúdo |
+|---|---|
+| `audit/V1__tabela_e_sequence_auditoria.sql` | `SALDO_AUDITORIA` e sua sequence |
+| `audit/V2__pkg_audit.sql` | `PKG_AUDIT.REGISTRAR_SALDO` e `GRANT EXECUTE` ao OWNER |
+| `owner/V1__tabelas_e_sequences.sql` | `CARTEIRA`, `LANCAMENTO`, sequences, índice do extrato |
+| `owner/V2__pkg_wallet_ctx.sql` | contexto da operação em andamento (para a auditoria) |
+| `owner/V3__triggers.sql` | imutabilidade do extrato e auditoria de saldo |
+| `owner/V4__pkg_wallet.sql` | `PKG_WALLET`: criar carteira e registrar operação |
+| `owner/V5__views_de_leitura.sql` | `V_CARTEIRA` e `V_EXTRATO` |
+| `owner/V6__grants_wallet_app.sql` | privilégios mínimos do `WALLET_APP` |
+
+As migrations são aplicadas **automaticamente quando a aplicação sobe**, pela classe [`FlywayConfig`](src/main/java/br/com/renanfranca/walletapi/config/FlywayConfig.java): primeiro o conjunto `audit` (conectada como `WALLET_AUDIT`), depois o `owner` (como `WALLET_OWNER`). Cada conjunto tem a sua tabela `flyway_schema_history` no próprio schema. A aplicação, ao servir requisições, usa só o `WALLET_APP`.
+
+## Estrutura do projeto e dependências
+
+Pacote raiz `br.com.renanfranca.walletapi` (group `br.com.renanfranca`, artifact `wallet-api`), Java 21, Maven, empacotado como jar com Tomcat embutido.
+
+```
+src/main/java/br/com/renanfranca/walletapi/
+  WalletApiApplication.java        ponto de entrada
+  config/FlywayConfig.java         executa as migrations no startup
+  controller/                      rotas HTTP (só traduz HTTP; sem regra de negócio)
+  service/                         casos de uso e controle da transação (@Transactional)
+  repository/                      acesso ao banco: escreve pelo PKG_WALLET, lê pelas views
+  model/                           objetos de domínio (records imutáveis)
+  dto/                             corpos de requisição e resposta
+  exception/                       catálogo de erros, payload padrão e tradução ORA-20xxx -> HTTP
+src/main/resources/
+  application.properties           conexão (WALLET_APP), senhas do .env, Actuator
+  db/migration/{audit,owner}/      migrations Flyway
+db/                                scripts de init do container e testes de banco
+```
+
+| Dependência | Para que | Por que |
+|---|---|---|
+| Spring Web | endpoints REST | os 4 endpoints do enunciado |
+| JDBC API | `JdbcTemplate`/`SimpleJdbcCall` | toda escrita passa pelo package PL/SQL; leitura por views |
+| Validation | validação do corpo das requisições | a regra definitiva continua no banco |
+| Flyway + módulo Oracle | migrations versionadas | exigido; o suporte a Oracle é um módulo separado desde o Flyway 10 |
+| Oracle Driver (ojdbc17) | conexão com o Oracle | escopo runtime |
+| Actuator | `health` e `info` | observabilidade mínima |
+| Testcontainers (oracle-free) | Oracle real nos testes | testes de integração, incluindo concorrência |
+
+**Não incluídos de propósito:** JPA/Hibernate (a escrita é via package e a leitura são views simples), Lombok (menos código gerado escondido) e Spring Security (a autenticação é por API key, sem JWT/OAuth). Os motivos estão em [DECISIONS.md](DECISIONS.md).
+
+## Modelo de dados
+
+- **`CARTEIRA`**: `ID` (sequence), `TITULAR` (opcional), `SALDO NUMBER(15,2)` com `CHECK (SALDO >= 0)`, `CRIADA_EM`.
+- **`LANCAMENTO`** (extrato): `ID`, `CARTEIRA_ID`, `TIPO` (`CREDITO` ou `DEBITO`), `VALOR > 0`, `SALDO_APOS`, `CHAVE_IDEMPOTENCIA`, `CRIADO_EM`. `UNIQUE (CARTEIRA_ID, CHAVE_IDEMPOTENCIA)`.
+- **`SALDO_AUDITORIA`** (schema de auditoria): saldo anterior, saldo novo, operação que causou a mudança, usuário do banco e momento.
+
+Triggers: o extrato é imutável (`UPDATE` e `DELETE` retornam `ORA-20005`, inclusive por SQL direto) e toda mudança de saldo grava a trilha na mesma transação.
 
 ## API
 
@@ -378,6 +505,6 @@ Nesta entrega o `id` da carteira (e do lançamento) é um **número** gerado por
 
 **Em produção, o identificador exposto pela API seria um UUID.** O caminho seria manter o número internamente (chave primária e ordenação) e acrescentar uma coluna `public_id` com UUID, usada nas rotas, ou usar UUID v7, que embute o tempo e preserva a ordem do extrato. Detalhes em [DECISIONS.md](DECISIONS.md) (item 35).
 
-## Próximas etapas
+## O que ficou de fora (itens "plus" do enunciado)
 
-A revisão final dos documentos e a entrega (PR da `develop` para a `main`). Testes de integração com Testcontainers (incluindo o teste concorrente em Java) e a cobertura mínima (JaCoCo) já estão prontos.
+Entregue: **todo o Núcleo obrigatório e todo o Perfil esperado** (7.1 e 7.2). Dos itens opcionais (7.3), **não** foram feitos, por escolha de escopo ("menor, bem-feito e bem-defendido"): teste de carga (k6/Gatling/JMeter), transferência entre carteiras, limite diário de débito, job de conciliação com `DBMS_SCHEDULER` e Dockerfile da aplicação. A observabilidade é a mínima: `health` e `info` do Actuator (sem métricas nem logs estruturados). O que eu faria com mais tempo, e em que ordem, está em [DECISIONS.md](DECISIONS.md). A consistência sob concorrência já é provada pelo `ConcorrenciaIT`, que cobre o ponto central do teste de carga (N operações simultâneas sobre a mesma carteira).

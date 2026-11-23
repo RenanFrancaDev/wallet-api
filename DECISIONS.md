@@ -377,6 +377,35 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Como migrar sem perder a ordem do extrato.** Manter o número internamente (chave primária, `FOR UPDATE`, ordenação) e acrescentar uma coluna `public_id` com UUID, única e indexada, usada em todas as rotas e respostas; ou adotar UUID v7, que embute o tempo e preserva a ordem. Custo: migrations, `PKG_WALLET`, triggers de auditoria, DTOs, rotas, os testes e a coleção do Postman.
 
+## 36. Conferência contra o enunciado
+
+Revisão final, ponto a ponto, do enunciado contra o repositório.
+
+| Requisito do enunciado | Situação | Onde |
+|---|---|---|
+| Carteira: saldo BRL com 2 casas, inicial 0.00, id gerado, titular opcional | feito | `owner/V1`, `PKG_WALLET.CRIAR_CARTEIRA` |
+| Crédito, débito, valor > 0, débito sem saldo rejeitado, extrato, idempotência, conflito de chave | feito | `PKG_WALLET.REGISTRAR_OPERACAO`, itens 4 a 6 |
+| Extrato imutável (até por SQL direto) e trilha de auditoria alimentada pelo banco, sem acesso da aplicação | feito | `owner/V3` (triggers), `audit/V1`/`V2`, `BancoIT` |
+| Concorrência: saldo nunca negativo, nada em dobro, saldo final consistente | feito e provado | lock `FOR UPDATE`, `ConcorrenciaIT` (e mutação, item 31) |
+| 4.1 Três schemas, menor privilégio, grants versionados | feito | `db/init/01_usuarios.sh`, `owner/V6` |
+| 4.2 Package PL/SQL, erros `-20000..-20999` documentados e traduzidos | feito | `PKG_WALLET`, README (tabela de erros) |
+| 4.3 Sequences explícitas e seu comportamento documentado | feito | item 7 e README (`CACHE 20` e lacunas) |
+| 4.4 Triggers de imutabilidade e de auditoria | feito | `owner/V3` |
+| 5 Os 4 endpoints, payload de erro padronizado, status HTTP defendidos | feito | itens 17, 21, 26, 27, Swagger |
+| 6 Docker: tag fixa, healthcheck, schemas por script, senhas por variável de ambiente | feito | `docker-compose.yml`, `.env.example` |
+| 7.1 Testes unitários (tradução de erros e saldo insuficiente) | feito | 122 testes |
+| 7.1 README com passo a passo, modelagem, objetos, decisões, como rodar e testar | feito | README |
+| 7.2 OpenAPI/Swagger, API key, migrations versionadas, mapeamento ORA-20xxx | feito | itens 10, 12, 28, 29 |
+| 7.2 Concorrência e idempotência dentro do banco, justificadas no README | feito | README (seção de estratégia) |
+| 7.2 Testes de integração com Oracle real e ao menos um concorrente | feito | 25 testes (`BancoIT`, `OperacoesIT`, `ConcorrenciaIT`, `OpenApiIT`) |
+| 7.3 Teste de carga, transferência, limite diário, conciliação, Dockerfile | **não feito** | escopo: ver "O que eu faria com mais tempo" |
+| 7.3 Observabilidade mínima | parcial | `health` e `info` do Actuator; sem métricas e logs estruturados |
+| 8 Histórico de commits com evolução, repositório em nome do candidato | feito | commits e PRs pequenos, todos no e-mail do candidato |
+| 8 DECISIONS com o que escolheu, por quê e o que faria diferente | feito | este arquivo |
+| 9 Premissas documentadas | feito | README (seção "Premissas assumidas") |
+
+**Pendências fora do código:** o e-mail para avaliacao.tech@datum.inf.br (assunto "Conclusão Avaliação – [nome completo]", com o link do repositório) e a combinação do prazo com a Datum.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
