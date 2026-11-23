@@ -372,6 +372,12 @@ Os padrões, as ferramentas, os testes que o CI exige e o motivo de cada escolha
 
 Conectado como `WALLET_APP` (por exemplo no DBeaver): `INSERT`, `UPDATE`, `DELETE` ou `SELECT` direto nas tabelas, e qualquer acesso ao schema de auditoria, retornam `ORA-00942`. O teste `regras_pkg_wallet.sql` automatiza essa prova.
 
+## Identificador da carteira: número no teste, UUID em produção
+
+Nesta entrega o `id` da carteira (e do lançamento) é um **número** gerado por uma `SEQUENCE` do Oracle (`21`, `22`...). Isso é uma escolha **apenas para fins deste teste**: o extrato ordena por data e, no empate, pelo `id` crescente, e o desenho de concorrência (sequences com cache, `FOR UPDATE`, triggers) foi pensado em cima dele. Ids sequenciais são adivinháveis (`/wallets/21` convida a tentar o `22`) e revelam o volume de carteiras.
+
+**Em produção, o identificador exposto pela API seria um UUID.** O caminho seria manter o número internamente (chave primária e ordenação) e acrescentar uma coluna `public_id` com UUID, usada nas rotas, ou usar UUID v7, que embute o tempo e preserva a ordem do extrato. Detalhes em [DECISIONS.md](DECISIONS.md) (item 35).
+
 ## Próximas etapas
 
-Testes de integração com Testcontainers (incluindo o teste concorrente em Java), cobertura mínima (JaCoCo) e a revisão final dos documentos.
+A revisão final dos documentos e a entrega (PR da `develop` para a `main`). Testes de integração com Testcontainers (incluindo o teste concorrente em Java) e a cobertura mínima (JaCoCo) já estão prontos.

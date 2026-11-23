@@ -365,6 +365,18 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 
 **Limitações.** Só Windows (consultam portas e processos com cmdlets do Windows). Não rodam no CI. O `start` espera no máximo 5 minutos pelo banco.
 
+## 35. Identificador numérico no teste; UUID em produção
+
+**Contexto.** O `id` da carteira que a API devolve é um número (`"id": 21`). Faz sentido perguntar se não deveria ser um UUID.
+
+**Decisão.** Mantive `NUMBER` gerado por `SEQUENCE`, **apenas para fins deste teste**. **Em produção, o identificador exposto pela API seria um UUID.**
+
+**Por que número aqui.** (1) O extrato ordena por data e, no empate, pelo `id` crescente (`ORDER BY criado_em DESC, id DESC`); com UUID aleatório o desempate viraria aleatório e a paginação deixaria de ser estável. (2) O desafio pede concorrência e idempotência resolvidas no banco, e o desenho com sequences (`CACHE 20`), `FOR UPDATE` e triggers usa o número. (3) É pequeno e rápido de indexar. (4) Não há vazamento entre usuários: a API tem uma chave única e nenhuma carteira pertence a um usuário específico.
+
+**Por que UUID em produção.** Ids sequenciais são adivinháveis (`/wallets/21` convida a tentar o `22`), o que vira falha de autorização assim que houver mais de um usuário ou cliente, e revelam o volume de carteiras. Um UUID também pode ser gerado fora do banco, útil em sistemas distribuídos.
+
+**Como migrar sem perder a ordem do extrato.** Manter o número internamente (chave primária, `FOR UPDATE`, ordenação) e acrescentar uma coluna `public_id` com UUID, única e indexada, usada em todas as rotas e respostas; ou adotar UUID v7, que embute o tempo e preserva a ordem. Custo: migrations, `PKG_WALLET`, triggers de auditoria, DTOs, rotas, os testes e a coleção do Postman.
+
 ## Limitações conhecidas
 
 - A trigger de imutabilidade não pega `TRUNCATE` (DDL), e o dono do schema pode desabilitá-la. Em produção: auditoria nativa do Oracle e controle de quem tem privilégio de DDL.
@@ -377,4 +389,4 @@ O Oracle devolve `0` e `100.5`, não `0.00` e `100.50`. O `record Carteira` norm
 - Limite diário de débito resolvido no banco.
 - Job de conciliação com `DBMS_SCHEDULER` (soma do extrato igual ao saldo; divergências na auditoria). O campo `SALDO_APOS` já ajuda a conferir.
 - Auditoria nativa do Oracle (`AUDIT`) como camada extra além das triggers.
-- Pipeline de CI (build e testes com Testcontainers).
+- Identificador público da carteira como UUID (item 35): hoje é um número, só para fins do teste.
